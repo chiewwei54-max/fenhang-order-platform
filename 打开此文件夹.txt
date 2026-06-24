@@ -1,0 +1,9 @@
+@echo off
+chcp 65001 >nul
+echo.
+echo 订货平台项目路径:
+echo   c:\Users\new\Desktop\分行订货平台_files
+echo.
+echo 在 GitHub Desktop 的 Local path 里粘贴上面路径，或点 Choose 选这个文件夹。
+echo.
+pause

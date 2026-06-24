@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <script src="storage-bridge.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title data-i18n-title-page="login.title">登录 - 分行订货平台</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body class="login-page">
+  <div class="login-card">
+    <div class="pref-panel pref-panel-login">
+      <button
+        type="button"
+        class="pref-toggle pref-toggle-login"
+        aria-expanded="false"
+        aria-controls="pref-dropdown-login"
+        data-i18n-title="pref.toggleTitle"
+        title="展开主题"
+      >
+        <span class="pref-toggle-icon" aria-hidden="true">⚙</span>
+        <span class="pref-toggle-summary">经典蓝</span>
+        <span class="pref-toggle-chevron" aria-hidden="true">▾</span>
+      </button>
+      <div class="pref-dropdown pref-dropdown-login" id="pref-dropdown-login" hidden>
+        <div class="pref-section">
+          <span class="pref-section-label" data-i18n="theme.label">主题</span>
+          <div class="theme-btns">
+            <button type="button" class="theme-btn active" data-theme="blue" data-i18n="theme.blue">经典蓝</button>
+            <button type="button" class="theme-btn" data-theme="green" data-i18n="theme.green">商务绿</button>
+            <button type="button" class="theme-btn" data-theme="purple" data-i18n="theme.purple">雅致紫</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="login-brand">
+      <div class="brand-icon">订</div>
+      <div>
+        <h1 data-i18n="login.title">分行订货平台</h1>
+        <p data-i18n="login.subtitle">货仓管理系统</p>
+      </div>
+    </div>
+
+    <form id="login-form" class="login-form">
+      <div class="field">
+        <span data-i18n="login.username">用户名</span>
+        <input type="text" id="username" value="admin" autocomplete="username" required />
+      </div>
+      <div class="field">
+        <span data-i18n="login.password">密码</span>
+        <input type="password" id="password" value="123456" autocomplete="current-password" required />
+      </div>
+      <p id="login-error" class="login-error" hidden></p>
+      <button type="submit" class="btn btn-primary btn-lg login-btn" data-i18n="login.submit">登 录</button>
+    </form>
+  </div>
+
+  <script src="i18n.js"></script>
+  <script>
+    const SESSION_KEY = "orderPlatform_session";
+
+    applyStaticI18n();
+    initLangSwitcher(() => applyStaticI18n());
+    initThemeSwitcher();
+    initPrefPanel();
+
+    if (sessionStorage.getItem(SESSION_KEY)) {
+      window.location.href = "index.html";
+    }
+
+    document.getElementById("login-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value;
+      const errEl = document.getElementById("login-error");
+
+      if (username === "admin" && password === "123456") {
+        sessionStorage.setItem(
+          SESSION_KEY,
+          JSON.stringify({ user: username, loginAt: new Date().toISOString() })
+        );
+        window.location.href = "index.html";
+        return;
+      }
+
+      errEl.textContent = t("login.error");
+      errEl.hidden = false;
+    });
+  </script>
+</body>
+</html>

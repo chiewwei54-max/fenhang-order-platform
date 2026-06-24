@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <script src="storage-bridge.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title data-i18n-title-page="appTitle">分行订货平台</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <script>
+    if (!sessionStorage.getItem("orderPlatform_session")) {
+      window.location.href = "login.html";
+    }
+  </script>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">订</div>
+        <div>
+          <h1 data-i18n="appTitle">订货平台</h1>
+          <p data-i18n="appSubtitle">分行货仓管理系统</p>
+        </div>
+      </div>
+
+      <div class="pref-panel" id="pref-panel">
+        <button
+          type="button"
+          class="pref-toggle"
+          id="pref-toggle"
+          aria-expanded="false"
+          aria-controls="pref-dropdown"
+          data-i18n-title="pref.toggleTitle"
+          title="展开主题"
+        >
+          <span class="pref-toggle-icon" aria-hidden="true">⚙</span>
+          <span class="pref-toggle-text" data-i18n="pref.toggle">界面设置</span>
+          <span class="pref-toggle-summary">经典蓝</span>
+          <span class="pref-toggle-chevron" aria-hidden="true">▾</span>
+        </button>
+        <div class="pref-dropdown" id="pref-dropdown" hidden>
+          <div class="pref-section">
+            <span class="pref-section-label" data-i18n="theme.label">主题</span>
+            <div class="theme-btns">
+              <button type="button" class="theme-btn active" data-theme="blue" data-i18n="theme.blue">经典蓝</button>
+              <button type="button" class="theme-btn" data-theme="green" data-i18n="theme.green">商务绿</button>
+              <button type="button" class="theme-btn" data-theme="purple" data-i18n="theme.purple">雅致紫</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item" data-view="cabinet-reserve">
+          <span class="nav-icon">🗄️</span><span data-i18n="nav.cabinetReserve">新货柜预定</span>
+        </button>
+        <button class="nav-item active" data-view="ordering">
+          <span class="nav-icon">📋</span><span data-i18n="nav.ordering">现货目录</span>
+        </button>
+        <button class="nav-item" data-view="orders">
+          <span class="nav-icon">📦</span><span data-i18n="nav.orders">订单管理</span>
+        </button>
+        <button class="nav-item" data-view="suggestions">
+          <span class="nav-icon">💡</span><span data-i18n="nav.suggestions">分行订购管理</span>
+        </button>
+        <button class="nav-item" data-view="products">
+          <span class="nav-icon">🏷️</span><span data-i18n="nav.products">商品管理</span>
+        </button>
+        <button class="nav-item" data-view="reports">
+          <span class="nav-icon">📈</span><span data-i18n="nav.reports">报表中心</span>
+        </button>
+        <button class="nav-item" data-view="settings">
+          <span class="nav-icon">⚙️</span><span data-i18n="nav.settings">设置中心</span>
+        </button>
+        <button class="nav-item logout-btn" id="btn-logout" type="button">
+          <span class="nav-icon">🚪</span><span data-i18n="nav.logout">退出登录</span>
+        </button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="help-box">
+          <strong data-i18n="help.title">Help Center</strong>
+          <p data-i18n="help.hotline">客服热线：400-888-6688</p>
+        </div>
+      </div>
+    </aside>
+
+    <div class="content-wrap">
+      <main class="main">
+        <section id="view-ordering" class="view active">
+          <header class="order-header">
+            <div class="header-fields">
+              <div class="header-field">
+                <label data-i18n="order.branchName">分行名字</label>
+                <select id="hdr-branch"></select>
+              </div>
+              <div class="header-field">
+                <label data-i18n="order.orderer">订货人名字</label>
+                <input type="text" id="hdr-orderer" value="张三" />
+              </div>
+              <div class="header-field">
+                <label data-i18n="order.orderBranch">订货分行</label>
+                <input type="text" id="hdr-branch-display" readonly />
+              </div>
+              <div class="header-field">
+                <label data-i18n="order.orderDate">订货日期</label>
+                <input type="date" id="hdr-date" />
+              </div>
+              <div class="header-field header-field-remark">
+                <label id="hdr-remark-label" data-i18n="order.remark">订货备注</label>
+                <p id="hdr-over-min-hint" class="header-over-min-hint" hidden></p>
+                <textarea id="hdr-remark" rows="2" data-i18n-placeholder="order.remarkPlaceholder" placeholder="填写备注信息（选填）"></textarea>
+              </div>
+            </div>
+            <button class="btn btn-primary" id="btn-header-submit">
+              <span data-i18n="order.submit">提交订单</span> (<span id="hdr-cart-count">0</span>)
+            </button>
+          </header>
+
+          <div class="ordering-layout">
+            <div class="filter-bar panel">
+                <div class="search-group search-group-autocomplete search-group-spot">
+                  <label data-i18n="order.spotSearchCode">查找 Item Code / Barcode</label>
+                  <div class="search-row-wrap">
+                    <div class="search-row search-row-spot">
+                      <div class="search-input-wrap">
+                        <input type="text" id="search-code" autocomplete="off" spellcheck="false" data-i18n-placeholder="order.spotSearchPlaceholder" placeholder="输入商品代码或条码..." />
+                        <button type="button" class="search-clear-btn" id="btn-clear-search-code" hidden data-i18n-title="order.searchClear" title="清除" aria-label="清除">×</button>
+                      </div>
+                      <button class="btn btn-primary" id="btn-search" data-i18n="order.search">搜索</button>
+                    </div>
+                    <div id="search-suggestions" class="search-suggestions search-suggestions-spot" hidden></div>
+                  </div>
+                  <div id="search-history" class="search-history" hidden></div>
+                </div>
+                <div class="filter-group">
+                  <label data-i18n="order.category">商品分类</label>
+                  <select id="filter-category"><option value="" data-i18n="order.allCategories">全部分类</option></select>
+                </div>
+                <div class="filter-group">
+                  <label data-i18n="order.department">部门分类</label>
+                  <select id="filter-department"><option value="" data-i18n="order.allDepartments">全部部门</option></select>
+                </div>
+                <div class="filter-group">
+                  <label data-i18n="order.stockStatus">库存状态</label>
+                  <select id="filter-stock">
+                    <option value="" data-i18n="order.all">全部</option>
+                    <option value="low" data-i18n="order.stockLow">库存不足</option>
+                    <option value="normal" data-i18n="order.stockNormal">库存正常</option>
+                    <option value="out" data-i18n="order.stockOut">缺货</option>
+                  </select>
+                </div>
+                <button class="btn btn-ghost" id="btn-reset-filters" data-i18n="order.reset">重置</button>
+                <div class="ordering-import-row">
+                  <div class="excel-actions">
+                    <button class="btn btn-secondary btn-sm" id="btn-download-order-import-template" type="button" data-i18n="order.dlOrderTemplate">下载订货模板</button>
+                    <label class="btn btn-primary btn-sm upload-btn">
+                      <span data-i18n="order.uploadOrderExcel">导入订货 Excel</span>
+                      <input type="file" id="order-excel-upload" accept=".xlsx,.xls,.csv" hidden />
+                    </label>
+                  </div>
+                  <div id="order-import-result" class="import-result" hidden></div>
+                </div>
+              </div>
+
+              <div class="panel product-panel">
+                <div class="panel-title" data-i18n="order.productList">商品列表</div>
+                <div id="product-grid" class="product-grid product-grid-spot"></div>
+                <div class="pagination" id="product-pagination"></div>
+              </div>
+          </div>
+        </section>
+
+        <section id="view-orders" class="view">
+          <div class="page-header orders-page-header">
+            <div>
+              <h2 data-i18n="orders.title">订单管理</h2>
+            </div>
+          </div>
+
+          <div class="panel orders-toolbar">
+            <div class="orders-toolbar-top">
+              <div id="orders-grand-total" class="orders-grand-total"></div>
+              <div class="orders-toolbar-filters">
+              <div class="field orders-search-field">
+                <span data-i18n="orders.search">搜索</span>
+                <input type="text" id="order-filter-search" data-i18n-placeholder="orders.searchPh" placeholder="单号 / 订货人 / 商品" />
+              </div>
+              <div class="field">
+                <span data-i18n="orders.branch">分行</span>
+                <select id="order-filter-branch"><option value="" data-i18n="orders.allBranches">全部分行</option></select>
+              </div>
+              <div class="field">
+                <span data-i18n="orders.status">状态</span>
+                <select id="order-filter-status">
+                  <option value="" data-i18n="order.all">全部</option>
+                  <option value="submitted" data-i18n="status.submitted">已提交</option>
+                  <option value="confirmed" data-i18n="status.confirmed">已确认</option>
+                  <option value="shipped" data-i18n="status.shipped">已发货</option>
+                </select>
+              </div>
+              <button class="btn btn-ghost btn-sm" id="btn-clear-order-filters" data-i18n="orders.clear">清除</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel orders-list-panel orders-summary-panel">
+            <div class="orders-matrix-head">
+              <div class="orders-matrix-head-main">
+                <h3 data-i18n="orders.summaryTable">采购汇总</h3>
+                <span class="orders-matrix-count" id="orders-matrix-count"></span>
+              </div>
+              <button class="btn btn-secondary btn-sm" id="btn-export-orders-excel" type="button" data-i18n="orders.exportExcel">导出 Excel 文件</button>
+            </div>
+            <div id="orders-list" class="orders-list"></div>
+          </div>
+
+          <div class="panel orders-manage-panel orders-detail-panel">
+            <div class="orders-manage-head">
+              <div class="orders-manage-head-main">
+                <h3 data-i18n="orders.manageOrders">订单明细</h3>
+                <label class="orders-select-all">
+                  <input type="checkbox" id="orders-select-all" />
+                  <span data-i18n="order.selectAll">全选</span>
+                </label>
+              </div>
+              <div class="orders-manage-actions">
+                <button class="btn btn-danger btn-sm" id="btn-delete-orders" type="button" disabled data-i18n="orders.deleteSelected">删除所选</button>
+                <button class="btn btn-primary btn-sm" id="btn-merge-orders" disabled data-i18n="orders.mergeSelected">合并所选</button>
+                <button class="btn btn-ghost btn-sm" id="btn-split-order" disabled data-i18n="orders.splitSelected">分批</button>
+              </div>
+            </div>
+            <div id="orders-manage-list" class="orders-manage-list"></div>
+          </div>
+
+          <div class="panel orders-cabinet-panel" id="orders-cabinet-panel">
+            <div class="orders-cabinet-head">
+              <div class="orders-cabinet-head-row">
+                <div class="orders-cabinet-head-main">
+                  <h3 data-i18n="orders.cabinetSectionTitle">新货柜预定</h3>
+                  <span class="orders-matrix-count" id="cabinet-orders-matrix-count"></span>
+                </div>
+                <button class="btn btn-secondary btn-sm" id="btn-export-cabinet-orders-excel" type="button" data-i18n="orders.cabinetExportExcel">导出 Excel</button>
+              </div>
+            </div>
+            <div id="cabinet-branch-status" class="cabinet-branch-status" aria-live="polite"></div>
+            <div id="cabinet-orders-grand-total" class="orders-grand-total orders-cabinet-grand"></div>
+            <div id="cabinet-orders-list" class="orders-list"></div>
+            <div class="orders-cabinet-detail-head">
+              <h4 data-i18n="orders.cabinetManageOrders">新货柜预定订单明细</h4>
+            </div>
+            <div id="cabinet-orders-manage-list" class="orders-manage-list"></div>
+          </div>
+        </section>
+
+        <section id="view-suggestions" class="view">
+          <div class="page-header">
+            <div>
+              <h2 data-i18n="suggestionsPage.title">订购建议</h2>
+            </div>
+            <div class="page-header-actions">
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-suggestions" data-i18n="suggestionsPage.refresh">刷新</button>
+            </div>
+          </div>
+
+          <div class="panel suggestions-excel-panel">
+            <div class="excel-actions">
+              <button class="btn btn-secondary" id="btn-download-suggestions-template" type="button" data-i18n="suggestionsPage.dlTemplate">下载 min order 模板</button>
+              <button class="btn btn-ghost" id="btn-export-suggestions" type="button" data-i18n="suggestionsPage.exportExcel">导出采购建议 Excel</button>
+              <label class="btn btn-primary upload-btn">
+                <span data-i18n="suggestionsPage.uploadMinOrder">导入 min order Excel</span>
+                <input type="file" id="suggestions-excel-upload" accept=".xlsx,.xls,.csv" hidden />
+              </label>
+            </div>
+            <div id="suggestions-import-result" class="import-result" hidden></div>
+          </div>
+
+          <div class="panel suggestions-toolbar">
+            <div class="suggestions-toolbar-filters">
+              <input type="search" id="suggestion-search" data-i18n-placeholder="suggestionsPage.searchPh" placeholder="搜索商品代码 / 名称..." />
+              <label class="field suggestions-filter-field">
+                <span data-i18n="order.category">商品分类</span>
+                <select id="suggestion-filter-category">
+                  <option value="" data-i18n="order.allCategories">全部分类</option>
+                </select>
+              </label>
+              <label class="field suggestions-filter-field">
+                <span data-i18n="order.department">部门分类</span>
+                <select id="suggestion-filter-department">
+                  <option value="" data-i18n="order.allDepartments">全部部门</option>
+                </select>
+              </label>
+              <label class="suggestions-filter-check">
+                <input type="checkbox" id="suggestion-only-restock" />
+                <span data-i18n="suggestionsPage.onlyRestock">仅显示需补货商品</span>
+              </label>
+              <button type="button" class="btn btn-ghost" id="btn-reset-suggestion-filters" data-i18n="order.reset">重置</button>
+            </div>
+            <div class="suggestions-bulk-bar" id="suggestion-bulk-bar">
+              <span class="suggestions-bulk-count" id="suggestion-selected-count" data-i18n="suggestionsPage.selectedCount">已选 0 项</span>
+              <span class="suggestions-bulk-label" data-i18n="suggestionsPage.bulkBranchesLabel">应用分行</span>
+              <div class="suggestions-bulk-branches" id="suggestion-bulk-branches"></div>
+              <label class="field suggestions-bulk-qty">
+                <span data-i18n="suggestionsPage.minOrder">最低订购</span>
+                <input type="number" id="suggestion-bulk-min-order" min="0" step="1" placeholder="0" />
+              </label>
+              <button type="button" class="btn btn-primary btn-sm" id="btn-suggestion-bulk-apply" data-i18n="suggestionsPage.bulkApply">同时修改</button>
+            </div>
+          </div>
+
+          <div id="suggestions-full-list" class="suggestions-table-wrap"></div>
+        </section>
+
+        <section id="view-cabinet-reserve" class="view">
+          <header class="order-header">
+            <div class="header-fields">
+              <div class="header-field">
+                <label data-i18n="order.branchName">分行名字</label>
+                <select id="cab-hdr-branch"></select>
+              </div>
+              <div class="header-field">
+                <label data-i18n="order.orderer">订货人名字</label>
+                <input type="text" id="cab-hdr-orderer" value="张三" />
+              </div>
+              <div class="header-field">
+                <label data-i18n="order.orderBranch">订货分行</label>
+                <input type="text" id="cab-hdr-branch-display" readonly />
+              </div>
+              <div class="header-field">
+                <label data-i18n="order.orderDate">订货日期</label>
+                <input type="date" id="cab-hdr-date" />
+              </div>
+              <div class="header-field header-field-remark">
+                <label id="cab-hdr-remark-label" data-i18n="order.remark">订货备注</label>
+                <p id="cab-hdr-over-min-hint" class="header-over-min-hint" hidden></p>
+                <textarea id="cab-hdr-remark" rows="2" data-i18n-placeholder="order.remarkPlaceholder" placeholder="填写备注信息（选填）"></textarea>
+              </div>
+            </div>
+            <button class="btn btn-primary" id="cab-btn-header-submit">
+              <span data-i18n="cabinetReserve.submit">提交预定</span> (<span id="cab-hdr-cart-count">0</span>)
+            </button>
+          </header>
+
+          <div class="ordering-layout">
+            <div class="filter-bar panel">
+              <div class="search-group search-group-autocomplete">
+                <label data-i18n="order.searchCode">查找 Item Code</label>
+                <div class="search-row-wrap">
+                    <div class="search-row">
+                      <input type="text" id="cab-search-code" autocomplete="off" data-i18n-placeholder="order.searchPlaceholder" placeholder="输入商品代码..." />
+                      <button class="btn btn-primary" id="cab-btn-search" data-i18n="order.search">搜索</button>
+                    </div>
+                    <div id="cab-search-suggestions" class="search-suggestions" hidden></div>
+                  </div>
+                <div id="cab-search-history" class="search-history" hidden></div>
+              </div>
+              <div class="ordering-import-row ordering-import-row-cabinet">
+                <div class="excel-actions">
+                  <button class="btn btn-secondary btn-sm" id="cab-btn-download-order-import-template" type="button" data-i18n="order.dlOrderTemplate">下载订货模板</button>
+                  <label class="btn btn-primary btn-sm upload-btn">
+                    <span data-i18n="order.uploadOrderExcel">导入订货 Excel</span>
+                    <input type="file" id="cab-order-excel-upload" accept=".xlsx,.xls,.csv" hidden />
+                  </label>
+                </div>
+                <div id="cab-order-import-result" class="import-result" hidden></div>
+              </div>
+            </div>
+
+            <div class="panel product-panel">
+              <div class="panel-title" data-i18n="order.productList">商品列表</div>
+              <div id="cab-product-grid" class="product-grid"></div>
+              <div class="pagination" id="cab-product-pagination"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-products" class="view">
+          <div class="page-header">
+            <div>
+              <h2 data-i18n="products.title">商品管理</h2>
+            </div>
+          </div>
+
+          <div class="products-category products-category-cabinet">
+            <div class="products-category-head">
+              <div>
+                <h3 class="products-category-title" data-i18n="products.cabinetCategory">新货柜预定</h3>
+              </div>
+            </div>
+
+            <div class="stock-admin panel cabinet-products-admin">
+              <div class="panel-header">
+                <h3 data-i18n="products.cabinetAdminTitle">新货柜预定商品管理</h3>
+                <div class="stock-admin-tools">
+                  <input type="text" id="cabinet-admin-search" data-i18n-placeholder="products.searchPh" placeholder="搜索代码 / 名称..." />
+                  <button class="btn btn-ghost btn-sm" id="btn-add-cabinet-product" data-i18n="products.cabinetAddProduct">+ 新增预定商品</button>
+                  <button class="btn btn-primary btn-sm" id="btn-save-all-cabinet-stock" data-i18n="products.cabinetSaveAll">保存全部</button>
+                </div>
+              </div>
+              <div class="table-wrap admin-stock-table">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th data-i18n="products.code">商品代码</th>
+                      <th data-i18n="products.name">商品名称</th>
+                      <th data-i18n="order.unit">单位</th>
+                      <th data-i18n="products.caseQty">箱数</th>
+                      <th data-i18n="order.unitPrice">单价</th>
+                      <th data-i18n="order.sellPrice">卖价</th>
+                      <th data-i18n="order.action">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="cabinet-stock-edit-body"></tbody>
+                </table>
+              </div>
+              <div class="pagination" id="cabinet-admin-pagination"></div>
+            </div>
+
+            <div class="excel-admin panel cabinet-excel-admin">
+              <h3 data-i18n="products.cabinetExcelTitle">新货柜预定 Excel 管理</h3>
+              <div class="excel-actions">
+                <button class="btn btn-primary" id="btn-download-cabinet-template" type="button" data-i18n="products.cabinetDlTpl">下载预定商品模板</button>
+                <button class="btn btn-secondary" id="btn-export-cabinet-products" type="button" data-i18n="products.cabinetExport">导出预定商品</button>
+                <label class="btn btn-ghost upload-btn">
+                  <span data-i18n="products.cabinetUpload">上传 Excel 更新</span>
+                  <input type="file" id="cabinet-excel-upload" accept=".xlsx,.xls,.csv" hidden />
+                </label>
+                <button class="btn btn-ghost btn-sm" id="btn-copy-from-main-products" type="button" data-i18n="products.cabinetCopyFromMain">从货仓复制全部</button>
+              </div>
+              <div id="cabinet-import-result" class="import-result" hidden></div>
+            </div>
+          </div>
+
+          <div class="products-warehouse-block">
+            <div class="inventory-excel-admin panel">
+              <h3 data-i18n="products.inventoryExcel">📥 上传最新库存 Excel</h3>
+              <div class="excel-actions">
+                <button class="btn btn-secondary" id="btn-download-inventory-template" data-i18n="products.dlInventoryTpl">下载库存 Excel 模板</button>
+                <button class="btn btn-ghost" id="btn-export-inventory" data-i18n="products.exportInventory">导出当前库存数据</button>
+                <label class="btn btn-primary upload-btn">
+                  <span data-i18n="products.uploadInventory">上传最新库存 Excel</span>
+                  <input type="file" id="inventory-excel-upload" accept=".xlsx,.xls,.csv" hidden />
+                </label>
+              </div>
+              <div id="inventory-import-result" class="import-result" hidden></div>
+            </div>
+
+            <div class="panel product-preview-panel">
+              <div class="panel-header">
+                <h3><span data-i18n="products.preview">商品预览</span> (<span id="product-count">0</span> <span data-i18n="products.previewCount">件</span>)</h3>
+                <div class="stock-admin-tools">
+                  <input type="text" id="admin-search" data-i18n-placeholder="products.searchPh" placeholder="搜索代码 / 名称..." />
+                  <button class="btn btn-ghost btn-sm" id="btn-add-product" data-i18n="products.addProduct">+ 新增商品</button>
+                </div>
+              </div>
+              <div class="table-wrap product-preview-wrap">
+                <table class="data-table product-preview-table">
+                  <thead>
+                    <tr>
+                      <th data-i18n="order.image">图片</th>
+                      <th data-i18n="products.previewProduct">商品</th>
+                      <th data-i18n="order.category">分类</th>
+                      <th data-i18n="products.caseQty">箱数</th>
+                      <th data-i18n="order.sellPrice">卖价</th>
+                    </tr>
+                  </thead>
+                  <tbody id="admin-product-body"></tbody>
+                </table>
+              </div>
+              <div class="pagination" id="admin-product-pagination"></div>
+            </div>
+          </div>
+        </section>
+
+        <dialog id="product-form-dialog" class="dialog">
+          <div class="dialog-header">
+            <h3 id="product-form-title" data-i18n="products.newProduct">新增商品</h3>
+            <button class="btn-icon" type="button" id="btn-close-product-form">✕</button>
+          </div>
+          <form id="product-form" class="dialog-body product-form">
+            <div class="form-grid">
+              <label class="field required"><span data-i18n="products.code">商品代码</span><input name="itemCode" required data-i18n-placeholder="products.codePh" placeholder="如 IC00013" /></label>
+              <label class="field required"><span data-i18n="products.name">商品名称</span><input name="itemName" required /></label>
+              <label class="field"><span data-i18n="order.spec">规格型号</span><input name="spec" /></label>
+              <label class="field"><span data-i18n="order.unit">单位</span><input name="unit" value="个" /></label>
+              <label class="field"><span data-i18n="products.brand">品牌</span><input name="brand" value="其他" /></label>
+              <label class="field"><span data-i18n="order.category">商品分类</span><input name="category" value="未分类" /></label>
+              <label class="field"><span data-i18n="order.department">部门分类</span><input name="department" value="通用" /></label>
+              <label class="field"><span data-i18n="order.stockQty">库存数量</span><input name="stockQty" type="number" min="0" value="0" /></label>
+              <label class="field"><span data-i18n="products.caseQty">箱数</span><input name="caseQty" type="number" min="0" value="0" /></label>
+              <label class="field"><span data-i18n="order.orderableQty">可订购数量</span><input name="orderableQty" type="number" min="0" value="0" /></label>
+              <label class="field"><span data-i18n="products.safetyStock">安全库存</span><input name="safetyStock" type="number" min="0" value="10" /></label>
+              <label class="field"><span data-i18n="order.unitPrice">单价 (元)</span><input name="unitPrice" type="number" min="0" step="0.01" value="0" /></label>
+              <label class="field"><span data-i18n="order.sellPrice">卖价 (元)</span><input name="sellPrice" type="number" min="0" step="0.01" value="0" /></label>
+              <label class="field field-full"><span data-i18n="products.imageUrl">图片 URL</span><input name="imageUrl" data-i18n-placeholder="products.imagePh" placeholder="留空则自动生成" /></label>
+            </div>
+            <div class="dialog-footer">
+              <button type="button" class="btn btn-ghost" id="btn-cancel-product-form" data-i18n="products.cancel">取消</button>
+              <button type="submit" class="btn btn-primary" data-i18n="products.saveProduct">保存商品</button>
+            </div>
+          </form>
+        </dialog>
+
+        <section id="view-reports" class="view">
+          <div class="page-header">
+            <div>
+              <h2 data-i18n="reports.title">报表中心</h2>
+            </div>
+          </div>
+          <div class="stats-grid" id="report-stats"></div>
+          <div class="panel">
+            <div class="panel-header"><h3 data-i18n="reports.recent">近期订单</h3></div>
+            <div id="report-orders" class="table-wrap"></div>
+          </div>
+        </section>
+
+        <section id="view-settings" class="view">
+          <div class="page-header">
+            <div>
+              <h2 data-i18n="settings.title">设置中心</h2>
+            </div>
+          </div>
+          <div class="panel settings-panel">
+            <h3 data-i18n="settings.branchMgmt">分行管理</h3>
+            <div class="settings-add">
+              <input type="text" id="new-branch" data-i18n-placeholder="settings.branchPh" placeholder="输入新分行名称..." />
+              <button class="btn btn-primary" id="btn-add-branch" data-i18n="settings.add">添加</button>
+            </div>
+            <ul class="branch-list" id="branch-list"></ul>
+          </div>
+        </section>
+      </main>
+
+      <footer class="cart-bar" id="cart-bar">
+        <div class="cart-info">
+          <span class="cart-icon">🛒</span>
+          <span><span data-i18n="cart.selected">已选商品</span> (<strong id="cart-count">0</strong>)</span>
+          <span class="cart-divider">|</span>
+          <span><span data-i18n="cart.totalQty">总数量</span>：<strong id="cart-total-qty">0</strong></span>
+          <span class="cart-divider">|</span>
+          <span><span data-i18n="cart.totalAmount">总金额</span>：<strong id="cart-total-amount">RM 0.00</strong></span>
+        </div>
+        <div class="cart-actions">
+          <button class="btn btn-ghost" id="btn-view-cart" data-i18n="cart.view">查看购物车</button>
+          <button class="btn btn-ghost" id="btn-clear-cart" data-i18n="cart.clear">清空购物车</button>
+          <button class="btn btn-primary btn-lg" id="btn-submit-order" data-i18n="cart.submit">提交订单</button>
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <dialog id="cart-dialog" class="dialog dialog-cart">
+    <div class="dialog-header">
+      <h3 data-i18n="cart.viewTitle">购物车</h3>
+      <button class="btn-icon" id="btn-close-cart-dialog" type="button">✕</button>
+    </div>
+    <div class="dialog-body" id="cart-dialog-body"></div>
+    <div class="cart-dialog-summary" id="cart-dialog-summary"></div>
+    <div class="dialog-footer">
+      <button class="btn btn-ghost" id="btn-cart-dialog-clear" type="button" data-i18n="cart.clear">清空购物车</button>
+      <button class="btn btn-ghost" id="btn-cart-dialog-continue" type="button" data-i18n="cart.continue">继续选购</button>
+      <button class="btn btn-primary" id="btn-cart-dialog-submit" type="button" data-i18n="cart.submit">提交订单</button>
+    </div>
+  </dialog>
+
+  <dialog id="order-split-dialog" class="dialog">
+    <div class="dialog-header">
+      <h3 data-i18n="orders.splitTitle">订单分批</h3>
+      <button class="btn-icon" id="btn-close-split" type="button">✕</button>
+    </div>
+    <div class="dialog-body">
+      <div id="order-split-body" class="table-wrap"></div>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn btn-ghost" id="btn-split-cancel" type="button" data-i18n="orders.splitCancel">取消</button>
+      <button class="btn btn-primary" id="btn-split-confirm" type="button" data-i18n="orders.splitConfirm">确认分批</button>
+    </div>
+  </dialog>
+
+  <dialog id="order-detail-dialog" class="dialog">
+    <div class="dialog-header">
+      <h3 id="detail-title" data-i18n="orders.detail">订单详情</h3>
+      <button class="btn-icon" id="btn-close-detail">✕</button>
+    </div>
+    <div class="dialog-body" id="detail-content"></div>
+    <div class="dialog-footer order-detail-footer">
+      <div class="order-detail-status-wrap">
+        <label for="detail-status-select" data-i18n="orders.changeStatus">订单状态</label>
+        <select id="detail-status-select" class="order-status-select"></select>
+      </div>
+      <div class="order-detail-actions">
+        <button class="btn btn-ghost" id="btn-detail-export-excel" type="button" data-i18n="orders.exportExcel">导出 Excel 文件</button>
+        <button class="btn btn-ghost" id="btn-detail-export" type="button" data-i18n="orders.exportCsv">导出 CSV</button>
+        <button class="btn btn-danger" id="btn-detail-delete" type="button" data-i18n="orders.delete">删除</button>
+        <button class="btn btn-primary" id="btn-detail-close" type="button" data-i18n="orders.close">关闭</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="xlsx.full.min.js.download"></script>
+  <script src="i18n.js"></script>
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
