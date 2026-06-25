@@ -88,10 +88,11 @@ option {
   font-family: inherit;
 }
 
-/* 现货目录、订单管理、分行订购管理：统一华语字体 */
+/* 现货目录、订单管理、分行订购管理、商品管理：统一华语字体 */
 #view-ordering,
 #view-orders,
-#view-suggestions {
+#view-suggestions,
+#view-products {
   font-family: var(--font);
 }
 
@@ -494,6 +495,61 @@ html:lang(ms) .orders-item-name {
   color: white;
   display: block;
   margin-bottom: 4px;
+}
+
+.app-version {
+  margin: 10px 0 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.42);
+  text-align: center;
+  user-select: none;
+}
+
+.app-version-login {
+  margin-top: 20px;
+  color: var(--text-muted, #94a3b8);
+}
+
+.app-version-bump {
+  animation: app-version-bump 0.65s ease;
+}
+
+@keyframes app-version-bump {
+  0%,
+  100% {
+    transform: scale(1);
+    color: rgba(255, 255, 255, 0.42);
+  }
+  35% {
+    transform: scale(1.14);
+    color: #7dd3fc;
+  }
+  65% {
+    transform: scale(0.96);
+    color: #bae6fd;
+  }
+}
+
+.login-page .app-version-bump {
+  animation-name: app-version-bump-login;
+}
+
+@keyframes app-version-bump-login {
+  0%,
+  100% {
+    transform: scale(1);
+    color: var(--text-muted, #94a3b8);
+  }
+  35% {
+    transform: scale(1.14);
+    color: var(--primary, #2563eb);
+  }
+  65% {
+    transform: scale(0.96);
+    color: #3b82f6;
+  }
 }
 
 /* Content wrap */
@@ -4803,6 +4859,91 @@ textarea.remark-required-over-min {
   width: 100%;
   margin-top: auto;
   margin-bottom: 0;
+}
+
+/* ========== Mobile shell (hidden on desktop) ========== */
+.mobile-topbar,
+.mobile-bottom-nav,
+.mobile-fold-trigger {
+  display: none;
+}
+
+.mobile-more-sheet {
+  border: none;
+  border-radius: 16px 16px 0 0;
+  padding: 0;
+  width: min(100%, 480px);
+  max-width: 100%;
+  margin: auto auto 0;
+  max-height: min(85vh, 640px);
+}
+
+.mobile-more-sheet::backdrop {
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.mobile-more-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.mobile-more-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.mobile-more-body {
+  padding: 8px 12px 16px;
+  overflow-y: auto;
+}
+
+.mobile-more-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  font: inherit;
+  font-size: 15px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.mobile-more-item:hover,
+.mobile-more-item:active {
+  background: var(--primary-light);
+}
+
+.mobile-more-theme {
+  padding: 12px;
+  margin: 8px 0;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--primary-light) 35%, var(--surface));
+}
+
+.mobile-theme-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.mobile-more-logout {
+  color: var(--danger);
+  margin-top: 4px;
+}
+
+.app-version-mobile {
+  text-align: center;
+  margin: 12px 0 4px;
+  color: var(--text-muted);
 }
 
 /* Responsive */

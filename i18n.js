@@ -30,6 +30,16 @@ const TRANSLATIONS = {
       toggle: "界面设置",
       toggleTitle: "展开主题",
     },
+    mobile: {
+      tabOrder: "订货",
+      tabCabinet: "货柜",
+      tabOrders: "订单",
+      tabSuggest: "分行",
+      more: "更多",
+      orderInfo: "订货信息",
+      filters: "筛选 / 导入",
+      importExcel: "Excel 导入",
+    },
     order: {
       branchName: "分行名字",
       orderer: "订货人名字",
@@ -469,6 +479,16 @@ const TRANSLATIONS = {
       toggle: "Display",
       toggleTitle: "Theme",
     },
+    mobile: {
+      tabOrder: "Order",
+      tabCabinet: "Cabinet",
+      tabOrders: "Orders",
+      tabSuggest: "Branch",
+      more: "More",
+      orderInfo: "Order info",
+      filters: "Filters / Import",
+      importExcel: "Excel import",
+    },
     order: {
       branchName: "Branch Name",
       orderer: "Orderer",
@@ -907,6 +927,16 @@ const TRANSLATIONS = {
     pref: {
       toggle: "Paparan",
       toggleTitle: "Tema",
+    },
+    mobile: {
+      tabOrder: "Pesan",
+      tabCabinet: "Kabinet",
+      tabOrders: "Pesanan",
+      tabSuggest: "Cawangan",
+      more: "Lagi",
+      orderInfo: "Maklumat pesanan",
+      filters: "Tapis / Import",
+      importExcel: "Import Excel",
     },
     order: {
       branchName: "Nama Cawangan",

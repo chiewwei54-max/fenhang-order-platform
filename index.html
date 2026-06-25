@@ -3,9 +3,11 @@
 <head>
   <script src="storage-bridge.js"></script>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#1a2332" />
   <title data-i18n-title-page="appTitle">分行订货平台</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="mobile.css" />
 </head>
 <body>
   <script>
@@ -14,6 +16,11 @@
     }
   </script>
   <div class="app">
+    <header class="mobile-topbar" id="mobile-topbar">
+      <div class="mobile-topbar-title" id="mobile-topbar-title" data-i18n="nav.ordering">现货目录</div>
+      <button type="button" class="mobile-topbar-btn" id="mobile-topbar-pref" data-i18n-title="pref.toggleTitle" title="界面设置" aria-label="界面设置">⚙</button>
+    </header>
+
     <aside class="sidebar">
       <div class="brand">
         <div class="brand-icon">订</div>
@@ -81,6 +88,7 @@
           <strong data-i18n="help.title">Help Center</strong>
           <p data-i18n="help.hotline">客服热线：400-888-6688</p>
         </div>
+        <p class="app-version" data-app-version></p>
       </div>
     </aside>
 
@@ -88,6 +96,12 @@
       <main class="main">
         <section id="view-ordering" class="view active">
           <header class="order-header">
+            <button type="button" class="mobile-fold-trigger" data-mobile-fold="order-header-fold" aria-expanded="false">
+              <span class="mobile-fold-label" data-i18n="mobile.orderInfo">订货信息</span>
+              <span class="mobile-fold-summary" id="mobile-order-summary"></span>
+              <span class="mobile-fold-chevron" aria-hidden="true">▾</span>
+            </button>
+            <div class="order-header-fold mobile-foldable is-folded" id="order-header-fold">
             <div class="header-fields">
               <div class="header-field">
                 <label data-i18n="order.branchName">分行名字</label>
@@ -111,13 +125,15 @@
                 <textarea id="hdr-remark" rows="2" data-i18n-placeholder="order.remarkPlaceholder" placeholder="填写备注信息（选填）"></textarea>
               </div>
             </div>
-            <button class="btn btn-primary" id="btn-header-submit">
+            <button class="btn btn-primary order-header-submit" id="btn-header-submit">
               <span data-i18n="order.submit">提交订单</span> (<span id="hdr-cart-count">0</span>)
             </button>
+            </div>
           </header>
 
           <div class="ordering-layout">
             <div class="filter-bar panel">
+                <div class="filter-bar-core">
                 <div class="search-group search-group-autocomplete search-group-spot">
                   <label data-i18n="order.spotSearchCode">查找 Item Code / Barcode</label>
                   <div class="search-row-wrap">
@@ -132,6 +148,12 @@
                   </div>
                   <div id="search-history" class="search-history" hidden></div>
                 </div>
+                </div>
+                <button type="button" class="mobile-fold-trigger mobile-filter-trigger" data-mobile-fold="filter-fold-ordering" aria-expanded="false">
+                  <span data-i18n="mobile.filters">筛选 / 导入</span>
+                  <span class="mobile-fold-chevron" aria-hidden="true">▾</span>
+                </button>
+                <div class="filter-bar-extra mobile-foldable is-folded" id="filter-fold-ordering">
                 <div class="filter-group">
                   <label data-i18n="order.category">商品分类</label>
                   <select id="filter-category"><option value="" data-i18n="order.allCategories">全部分类</option></select>
@@ -159,6 +181,7 @@
                     </label>
                   </div>
                   <div id="order-import-result" class="import-result" hidden></div>
+                </div>
                 </div>
               </div>
 
@@ -312,6 +335,12 @@
 
         <section id="view-cabinet-reserve" class="view">
           <header class="order-header">
+            <button type="button" class="mobile-fold-trigger" data-mobile-fold="cab-order-header-fold" aria-expanded="false">
+              <span class="mobile-fold-label" data-i18n="mobile.orderInfo">订货信息</span>
+              <span class="mobile-fold-summary" id="mobile-cab-order-summary"></span>
+              <span class="mobile-fold-chevron" aria-hidden="true">▾</span>
+            </button>
+            <div class="order-header-fold mobile-foldable is-folded" id="cab-order-header-fold">
             <div class="header-fields">
               <div class="header-field">
                 <label data-i18n="order.branchName">分行名字</label>
@@ -335,13 +364,15 @@
                 <textarea id="cab-hdr-remark" rows="2" data-i18n-placeholder="order.remarkPlaceholder" placeholder="填写备注信息（选填）"></textarea>
               </div>
             </div>
-            <button class="btn btn-primary" id="cab-btn-header-submit">
+            <button class="btn btn-primary order-header-submit" id="cab-btn-header-submit">
               <span data-i18n="cabinetReserve.submit">提交预定</span> (<span id="cab-hdr-cart-count">0</span>)
             </button>
+            </div>
           </header>
 
           <div class="ordering-layout">
             <div class="filter-bar panel">
+              <div class="filter-bar-core">
               <div class="search-group search-group-autocomplete">
                 <label data-i18n="order.searchCode">查找 Item Code</label>
                 <div class="search-row-wrap">
@@ -353,6 +384,12 @@
                   </div>
                 <div id="cab-search-history" class="search-history" hidden></div>
               </div>
+              </div>
+              <button type="button" class="mobile-fold-trigger mobile-filter-trigger" data-mobile-fold="filter-fold-cabinet" aria-expanded="false">
+                <span data-i18n="mobile.importExcel">Excel 导入</span>
+                <span class="mobile-fold-chevron" aria-hidden="true">▾</span>
+              </button>
+              <div class="filter-bar-extra mobile-foldable is-folded" id="filter-fold-cabinet">
               <div class="ordering-import-row ordering-import-row-cabinet">
                 <div class="excel-actions">
                   <button class="btn btn-secondary btn-sm" id="cab-btn-download-order-import-template" type="button" data-i18n="order.dlOrderTemplate">下载订货模板</button>
@@ -362,6 +399,7 @@
                   </label>
                 </div>
                 <div id="cab-order-import-result" class="import-result" hidden></div>
+              </div>
               </div>
             </div>
 
@@ -550,7 +588,60 @@
         </div>
       </footer>
     </div>
+
+    <nav class="mobile-bottom-nav" id="mobile-bottom-nav" aria-label="主导航">
+      <button type="button" class="mobile-tab active" data-view="ordering">
+        <span class="mobile-tab-icon" aria-hidden="true">📋</span>
+        <span class="mobile-tab-label" data-i18n="mobile.tabOrder">订货</span>
+      </button>
+      <button type="button" class="mobile-tab" data-view="cabinet-reserve">
+        <span class="mobile-tab-icon" aria-hidden="true">🗄️</span>
+        <span class="mobile-tab-label" data-i18n="mobile.tabCabinet">货柜</span>
+      </button>
+      <button type="button" class="mobile-tab" data-view="orders">
+        <span class="mobile-tab-icon" aria-hidden="true">📦</span>
+        <span class="mobile-tab-label" data-i18n="mobile.tabOrders">订单</span>
+      </button>
+      <button type="button" class="mobile-tab" data-view="suggestions">
+        <span class="mobile-tab-icon" aria-hidden="true">💡</span>
+        <span class="mobile-tab-label" data-i18n="mobile.tabSuggest">分行</span>
+      </button>
+      <button type="button" class="mobile-tab" data-mobile-more id="mobile-more-btn">
+        <span class="mobile-tab-icon" aria-hidden="true">☰</span>
+        <span class="mobile-tab-label" data-i18n="mobile.more">更多</span>
+      </button>
+    </nav>
   </div>
+
+  <dialog class="mobile-more-sheet" id="mobile-more-sheet">
+    <div class="mobile-more-header">
+      <h3 data-i18n="mobile.more">更多</h3>
+      <button type="button" class="btn-icon mobile-more-close" id="mobile-more-close" aria-label="关闭">✕</button>
+    </div>
+    <div class="mobile-more-body">
+      <button type="button" class="mobile-more-item" data-mobile-nav="products">
+        <span>🏷️</span><span data-i18n="nav.products">商品管理</span>
+      </button>
+      <button type="button" class="mobile-more-item" data-mobile-nav="reports">
+        <span>📈</span><span data-i18n="nav.reports">报表中心</span>
+      </button>
+      <button type="button" class="mobile-more-item" data-mobile-nav="settings">
+        <span>⚙️</span><span data-i18n="nav.settings">设置中心</span>
+      </button>
+      <div class="mobile-more-theme">
+        <span class="pref-section-label" data-i18n="theme.label">主题</span>
+        <div class="theme-btns mobile-theme-btns">
+          <button type="button" class="theme-btn active" data-theme="blue" data-i18n="theme.blue">经典蓝</button>
+          <button type="button" class="theme-btn" data-theme="green" data-i18n="theme.green">商务绿</button>
+          <button type="button" class="theme-btn" data-theme="purple" data-i18n="theme.purple">雅致紫</button>
+        </div>
+      </div>
+      <button type="button" class="mobile-more-item mobile-more-logout" id="mobile-logout-btn">
+        <span>🚪</span><span data-i18n="nav.logout">退出登录</span>
+      </button>
+      <p class="app-version app-version-mobile" data-app-version></p>
+    </div>
+  </dialog>
 
   <div id="toast" class="toast" hidden></div>
 
@@ -603,6 +694,7 @@
   </dialog>
 
   <script src="xlsx.full.min.js.download"></script>
+  <script src="version.js"></script>
   <script src="i18n.js"></script>
   <script src="data.js"></script>
   <script src="app.js"></script>

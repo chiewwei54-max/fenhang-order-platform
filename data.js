@@ -29,6 +29,7 @@ const STORAGE_KEYS = {
   branchMinOrdersVersion: "orderPlatform_branchMinOrdersVersion",
   overMinDismissed: "orderPlatform_overMinDismissed",
   counter: "orderPlatform_counter",
+  storageSyncVersion: "orderPlatform_storageSyncVersion",
 };
 
 const PRODUCTS_UPDATED_EVENT = "orderPlatform:productsUpdated";
@@ -333,6 +334,7 @@ function generateId() {
 
 function saveBranches(branches) {
   localStorage.setItem(STORAGE_KEYS.branches, JSON.stringify(branches));
+  bumpStorageSyncVersion();
 }
 
 function normalizeProduct(p) {
@@ -355,15 +357,21 @@ function normalizeProduct(p) {
 const CATALOG_DEFAULT_ORDER_QTY = 99999;
 
 const MOJIBAKE_RE = /Ã|â€|Æ|â‚|Â|ï¿½/;
+const CORRUPT_TEXT_RE = /Ã|â€|Æ|â‚|Â|ï¿½|\uFFFD|A,A|[\u0080-\u009F]/;
 
 function hasMojibakeText(text) {
   return typeof text === "string" && MOJIBAKE_RE.test(text);
 }
 
+function hasCorruptText(text) {
+  return typeof text === "string" && CORRUPT_TEXT_RE.test(text);
+}
+
 /** 去掉 UTF-8 被错误编码后产生的乱码后缀，保留前面的英文/数字名称 */
 function stripMojibakeText(text) {
   if (!text || typeof text !== "string") return "";
-  const idx = text.search(MOJIBAKE_RE);
+  if (!hasCorruptText(text)) return text;
+  const idx = text.search(CORRUPT_TEXT_RE);
   if (idx < 0) return text;
   if (idx === 0) return "";
   return text.slice(0, idx).trimEnd();
@@ -372,8 +380,92 @@ function stripMojibakeText(text) {
 /** 展示用文本：去掉乱码，必要时回退为 fallback */
 function cleanDisplayText(text, fallback = "") {
   if (!text || typeof text !== "string") return fallback;
-  if (!hasMojibakeText(text)) return text;
+  if (!hasCorruptText(text)) return text;
   return stripMojibakeText(text) || fallback;
+}
+
+/** 库存目录文本字段：去掉乱码，空值回退 fallback */
+function sanitizeCatalogTextField(text, fallback = "") {
+  if (text == null || text === "") return fallback;
+  const s = String(text).trim();
+  if (!s) return fallback;
+  if (!hasCorruptText(s)) return s;
+  return stripMojibakeText(s) || fallback;
+}
+
+function bumpStorageSyncVersion() {
+  localStorage.setItem(STORAGE_KEYS.storageSyncVersion, String(Date.now()));
+}
+
+function getStorageSyncVersion() {
+  return localStorage.getItem(STORAGE_KEYS.storageSyncVersion) || "0";
+}
+
+/** 从快照对象读取同步版本（用于 storage-bridge 与服务器比对） */
+function readSnapshotSyncVersion(snapshot) {
+  const ls = snapshot?.localStorage || {};
+  return String(
+    ls[STORAGE_KEYS.storageSyncVersion] ||
+      ls.orderPlatform_storageSyncVersion ||
+      ls[STORAGE_KEYS.productsVersion] ||
+      ls.orderPlatform_productsVersion ||
+      "0"
+  );
+}
+
+/** 现货目录商品：统一清洗华语/文本字段，避免乱码残留 */
+function sanitizeInventoryProduct(p) {
+  if (!p) return p;
+  const code = p.itemCode || "";
+  return {
+    ...p,
+    itemName: sanitizeCatalogTextField(p.itemName, code),
+    category: sanitizeCatalogTextField(p.category, "未分类"),
+    department: sanitizeCatalogTextField(p.department, "通用"),
+    spec: sanitizeCatalogTextField(p.spec, ""),
+    unit: sanitizeCatalogTextField(p.unit, "") || p.unit || "个",
+    brand: sanitizeCatalogTextField(p.brand, "") || p.brand || "其他",
+    barcode: p.barcode ? sanitizeCatalogTextField(p.barcode, "") : p.barcode || "",
+  };
+}
+
+/** 现货目录 Excel 上传后：清洗商品并同步订单行商品名称 */
+function finalizeInventoryCatalogUpload(products, orders) {
+  const cleanProducts = sortProductsByClassification(
+    (products || []).map(sanitizeInventoryProduct)
+  );
+  const catalog = getMergedProductCatalog();
+  cleanProducts.forEach((p) => {
+    const key = String(p.itemCode || "").trim().toLowerCase();
+    const idx = catalog.findIndex(
+      (c) => String(c.itemCode || "").trim().toLowerCase() === key
+    );
+    if (idx >= 0) catalog[idx] = p;
+    else catalog.push(p);
+  });
+  const { orders: cleanOrders, changed: ordersChanged } = repairOrderItemNames(
+    orders || [],
+    catalog
+  );
+  return { products: cleanProducts, orders: cleanOrders, ordersChanged };
+}
+
+function findProductByCode(products, itemCode) {
+  const key = String(itemCode || "").trim().toLowerCase();
+  return products.find((p) => String(p.itemCode || "").trim().toLowerCase() === key);
+}
+
+/** 现货目录 + 新货柜预定：订单解析商品名时合并查找（现货优先） */
+function getMergedProductCatalog() {
+  const main = loadProducts();
+  const cabinet = loadCabinetProducts();
+  const seen = new Set(main.map((p) => String(p.itemCode || "").trim().toLowerCase()));
+  const merged = [...main];
+  cabinet.forEach((p) => {
+    const key = String(p.itemCode || "").trim().toLowerCase();
+    if (key && !seen.has(key)) merged.push(p);
+  });
+  return merged;
 }
 
 function resolveItemName(itemCode, lineName, products) {
@@ -399,25 +491,9 @@ function repairOrderItemNames(orders, products) {
 }
 
 function repairProductTextFields(p) {
-  const fields = ["itemName", "category", "brand", "department", "spec", "unit"];
-  let changed = false;
-  const n = { ...p };
-  for (const key of fields) {
-    if (!hasMojibakeText(n[key])) continue;
-    const cleaned = stripMojibakeText(n[key]);
-    if (cleaned !== n[key]) {
-      n[key] = cleaned;
-      changed = true;
-    }
-  }
-  if (!n.itemName || hasMojibakeText(n.itemName)) {
-    n.itemName = p.itemCode || n.itemCode || "";
-    changed = true;
-  }
-  if (!n.category || hasMojibakeText(n.category)) {
-    n.category = "未分类";
-    changed = true;
-  }
+  const n = sanitizeInventoryProduct(p);
+  const fields = ["itemName", "category", "department", "spec", "unit", "brand", "barcode"];
+  const changed = fields.some((key) => (n[key] ?? "") !== (p[key] ?? ""));
   return { product: n, changed };
 }
 
@@ -444,6 +520,19 @@ function repairProductOrderable(p) {
   return n;
 }
 
+function repairPersistedStorageOnBoot() {
+  const nextProducts = loadProducts();
+  const nextCabinet = loadCabinetProducts();
+  const nextOrders = loadOrders();
+  return {
+    products: nextProducts,
+    cabinetProducts: nextCabinet,
+    orders: nextOrders,
+    productsVersion: getProductsVersion(),
+    cabinetProductsVersion: getCabinetProductsVersion(),
+  };
+}
+
 function loadProducts() {
   const saved = localStorage.getItem(STORAGE_KEYS.products);
   if (saved) {
@@ -466,6 +555,7 @@ function loadProducts() {
 function saveProducts(products) {
   localStorage.setItem(STORAGE_KEYS.products, JSON.stringify(products));
   localStorage.setItem(STORAGE_KEYS.productsVersion, String(Date.now()));
+  bumpStorageSyncVersion();
   window.dispatchEvent(new CustomEvent(PRODUCTS_UPDATED_EVENT));
 }
 
@@ -495,6 +585,7 @@ function loadCabinetProducts() {
 function saveCabinetProducts(list) {
   localStorage.setItem(STORAGE_KEYS.cabinetProducts, JSON.stringify(list));
   localStorage.setItem(STORAGE_KEYS.cabinetProductsVersion, String(Date.now()));
+  bumpStorageSyncVersion();
   window.dispatchEvent(new CustomEvent(CABINET_PRODUCTS_UPDATED_EVENT));
 }
 
@@ -507,7 +598,7 @@ function loadOrders() {
   if (saved) {
     try {
       const orders = JSON.parse(saved);
-      const { orders: repaired, changed } = repairOrderItemNames(orders, loadProducts());
+      const { orders: repaired, changed } = repairOrderItemNames(orders, getMergedProductCatalog());
       if (changed) saveOrders(repaired);
       return repaired;
     } catch {
@@ -519,6 +610,7 @@ function loadOrders() {
 
 function saveOrders(orders) {
   localStorage.setItem(STORAGE_KEYS.orders, JSON.stringify(orders));
+  bumpStorageSyncVersion();
 }
 
 function nextOrderNo() {
@@ -718,6 +810,7 @@ function loadBranchMinOrders() {
 function saveBranchMinOrders(map) {
   localStorage.setItem(STORAGE_KEYS.branchMinOrders, JSON.stringify(map));
   localStorage.setItem(STORAGE_KEYS.branchMinOrdersVersion, String(Date.now()));
+  bumpStorageSyncVersion();
   window.dispatchEvent(new CustomEvent(BRANCH_MIN_ORDERS_UPDATED_EVENT));
 }
 
@@ -1324,19 +1417,19 @@ function rowToInventoryUpdate(row, headerMap) {
   };
 
   const patch = { itemCode };
-  const itemName = get("itemName");
+  const itemName = sanitizeCatalogTextField(get("itemName"), "");
   if (itemName) patch.itemName = itemName;
   if (headerMap.category !== undefined) {
-    patch.category = get("category") || "未分类";
+    patch.category = sanitizeCatalogTextField(get("category"), "未分类");
   }
   if (headerMap.department !== undefined) {
-    patch.department = get("department") || "通用";
+    patch.department = sanitizeCatalogTextField(get("department"), "通用");
   }
-  const barcode = get("barcode");
+  const barcode = sanitizeCatalogTextField(get("barcode"), "");
   if (barcode) patch.barcode = barcode;
   const imageUrl = get("imageUrl");
   if (imageUrl) patch.imageUrl = imageUrl;
-  const unit = get("unit");
+  const unit = sanitizeCatalogTextField(get("unit"), "");
   if (unit) patch.unit = unit;
 
   const caseQty = num("caseQty");
@@ -1457,7 +1550,7 @@ function buildProductFromInventoryPatch(patch, prev) {
     merged.orderableQty = CATALOG_DEFAULT_ORDER_QTY;
   }
   if (merged.orderableQty > merged.stockQty) merged.orderableQty = merged.stockQty;
-  return merged;
+  return sanitizeInventoryProduct(merged);
 }
 
 /**
@@ -1820,11 +1913,6 @@ function findMatrixBranchColumn(branchName, columns) {
   return columns.find((c) => c.key === key || normalizeBranchKey(c.name) === key);
 }
 
-function findProductByCode(products, itemCode) {
-  const key = String(itemCode || "").trim().toLowerCase();
-  return products.find((p) => String(p.itemCode || "").trim().toLowerCase() === key);
-}
-
 function calcMatrixCases(total, caseQty) {
   if (!caseQty || caseQty <= 0 || !total) return "";
   return Math.ceil(total / caseQty);
@@ -1930,7 +2018,7 @@ function buildOrderMatrixSheetRows(orders, products, labels) {
   return { header, rows: body, summaryRow, branchColumns, matrixRows: rows, summary };
 }
 
-function buildOrdersDetailSheetRows(orders, labels, getStatusText) {
+function buildOrdersDetailSheetRows(orders, labels, getStatusText, products) {
   const header = [
     labels.orderNo,
     labels.branch,
@@ -1956,7 +2044,7 @@ function buildOrdersDetailSheetRows(orders, labels, getStatusText) {
         order.orderDate || "",
         statusText,
         line.itemCode,
-        line.itemName,
+        resolveItemName(line.itemCode, line.itemName, products),
         line.quantity,
         line.unit || "",
         line.unitPrice || 0,
@@ -1985,7 +2073,7 @@ function downloadOrdersFileExcel(filename, orders, products, matrixLabels, detai
     sanitizeSheetName(matrixLabels.summarySheet || matrixLabels.sheetName || "Summary")
   );
 
-  const detail = buildOrdersDetailSheetRows(orders, detailLabels, getStatusText);
+  const detail = buildOrdersDetailSheetRows(orders, detailLabels, getStatusText, products);
   const wsDetail = XLSX.utils.aoa_to_sheet([detail.header, ...detail.rows]);
   wsDetail["!cols"] = [14, 14, 12, 12, 10, 12, 22, 8, 8, 10, 12];
   applyWorksheetA4Setup(wsDetail);

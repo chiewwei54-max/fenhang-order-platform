@@ -33,8 +33,18 @@
   let detailOrderId = null;
   const PAGE_BTN_WINDOW = 7;
 
+  function getOrderItemCatalog() {
+    const seen = new Set(products.map((p) => String(p.itemCode || "").trim().toLowerCase()));
+    const merged = [...products];
+    cabinetProducts.forEach((p) => {
+      const key = String(p.itemCode || "").trim().toLowerCase();
+      if (key && !seen.has(key)) merged.push(p);
+    });
+    return merged;
+  }
+
   function displayItemName(itemName, itemCode = "") {
-    return escapeHtml(cleanDisplayText(itemName, itemCode));
+    return escapeHtml(resolveItemName(itemCode, itemName, getOrderItemCatalog()));
   }
 
   function displayTextLabel(text, fallback = "") {
@@ -391,11 +401,18 @@
     if (options.toast) showToast(options.toast);
   }
 
+  function ensureOrdersItemNamesFresh() {
+    const repair = repairOrderItemNames(orders, getOrderItemCatalog());
+    if (!repair.changed) return;
+    orders = repair.orders;
+    saveOrders(orders);
+  }
+
   /** 后台更新后，前台所有页面立即同步 */
   function syncAllViews(options = {}) {
     products = loadProducts();
     productsVersion = getProductsVersion();
-    const orderRepair = repairOrderItemNames(orders, products);
+    const orderRepair = repairOrderItemNames(orders, getOrderItemCatalog());
     if (orderRepair.changed) {
       orders = orderRepair.orders;
       saveOrders(orders);
@@ -433,6 +450,7 @@
     els.views.forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
     els.navItems.forEach((n) => n.classList.toggle("active", n.dataset.view === name));
     updateCartBarVisibility(name);
+    updateMobileChrome(name);
     if (name === "ordering") renderOrdering();
     if (name === "orders") renderOrdersList();
     if (name === "suggestions") renderSuggestionsPage();
@@ -461,6 +479,7 @@
     if (prevFilter && [...els.orderFilterBranch.options].some((o) => o.value === prevFilter)) {
       els.orderFilterBranch.value = prevFilter;
     }
+    refreshMobileOrderSummaries();
   }
 
   function populateFilters(ctx = standardOrderingCtx) {
@@ -2763,6 +2782,7 @@
   }
 
   function renderOrdersList() {
+    ensureOrdersItemNamesFresh();
     const allFiltered = getFilteredOrders();
     const filtered = allFiltered.filter((o) => !isCabinetReserveOrder(o));
     const cabinetFiltered = allFiltered.filter(isCabinetReserveOrder);
@@ -2804,6 +2824,7 @@
   }
 
   function openOrderDetail(id) {
+    ensureOrdersItemNamesFresh();
     const order = orders.find((o) => o.id === id);
     if (!order) return;
     detailOrderId = id;
@@ -2900,11 +2921,11 @@
         <td class="preview-cell-img">${renderProductThumb(p, 48)}</td>
         <td class="preview-cell-info">
           <code class="preview-code">${escapeHtml(p.itemCode)}</code>
-          <span class="preview-name" title="${escapeHtml(p.itemName)}">${escapeHtml(p.itemName)}</span>
+          <span class="preview-name" title="${displayItemName(p.itemName, p.itemCode)}">${displayItemName(p.itemName, p.itemCode)}</span>
         </td>
         <td class="preview-cell-cat">
-          <span class="preview-cat">${escapeHtml(p.category)}</span>
-          <span class="preview-dept">${escapeHtml(p.department || t("products.generalDept"))}</span>
+          <span class="preview-cat">${displayTextLabel(p.category, t("products.uncategorized"))}</span>
+          <span class="preview-dept">${displayTextLabel(p.department || t("products.generalDept"), t("products.generalDept"))}</span>
         </td>
         <td class="preview-cell-case">
           <strong class="preview-case-num">${p.caseQty ?? 0}</strong>
@@ -4036,7 +4057,12 @@
     els.inventoryImportResult.hidden = true;
     return parseInventoryExcelFile(file).then((patches) => {
       const result = mergeInventoryUpdate(products, patches);
-      persistProducts(result.products, {
+      const finalized = finalizeInventoryCatalogUpload(result.products, orders);
+      if (finalized.ordersChanged) {
+        orders = finalized.orders;
+        saveOrders(orders);
+      }
+      persistProducts(finalized.products, {
         fromInventoryUpload: true,
         toast: t("toast.inventorySynced", { n: result.total }),
       });
@@ -4045,7 +4071,8 @@
       els.inventoryImportResult.innerHTML =
         `✓ 库存同步成功：共 ${result.total} 行，` +
         `覆盖 ${result.updated} 件，新增 ${result.added} 件，移除 ${result.removed} 件。` +
-        `<br/>现货目录、商品分类与部门分类已按 Excel 全部更新；新货柜预定商品库未变动。`;
+        `<br/>现货目录、商品分类与部门分类已按 Excel 全部更新；华语商品名称已统一，历史乱码已清除。` +
+        `<br/>新货柜预定商品库未变动。`;
       return result;
     });
   }
@@ -4169,6 +4196,97 @@
   function refreshLanguage() {
     applyStaticI18n();
     syncAllViews();
+    updateMobileChrome(getActiveViewName());
+  }
+
+  const MOBILE_PRIMARY_VIEWS = new Set([
+    "ordering",
+    "cabinet-reserve",
+    "orders",
+    "suggestions",
+  ]);
+
+  const MOBILE_VIEW_TITLE_KEYS = {
+    ordering: "nav.ordering",
+    "cabinet-reserve": "nav.cabinetReserve",
+    orders: "nav.orders",
+    suggestions: "nav.suggestions",
+    products: "nav.products",
+    reports: "nav.reports",
+    settings: "nav.settings",
+  };
+
+  function updateMobileChrome(viewName) {
+    const titleEl = document.getElementById("mobile-topbar-title");
+    if (titleEl) {
+      const key = MOBILE_VIEW_TITLE_KEYS[viewName] || "appTitle";
+      titleEl.textContent = typeof t === "function" ? t(key) : titleEl.textContent;
+    }
+    document.querySelectorAll(".mobile-tab[data-view]").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.view === viewName);
+    });
+    const moreBtn = document.getElementById("mobile-more-btn");
+    if (moreBtn) {
+      moreBtn.classList.toggle("active", viewName && !MOBILE_PRIMARY_VIEWS.has(viewName));
+    }
+  }
+
+  function refreshMobileOrderSummaries() {
+    const spot = document.getElementById("mobile-order-summary");
+    const cab = document.getElementById("mobile-cab-order-summary");
+    const spotText = [els.hdrBranch?.value, els.hdrOrderer?.value].filter(Boolean).join(" · ");
+    const cabText = [cabinetEls.hdrBranch?.value, cabinetEls.hdrOrderer?.value].filter(Boolean).join(" · ");
+    if (spot) spot.textContent = spotText;
+    if (cab) cab.textContent = cabText;
+  }
+
+  function initMobileShell() {
+    document.querySelectorAll("[data-mobile-fold]").forEach((trigger) => {
+      const targetId = trigger.dataset.mobileFold;
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      trigger.addEventListener("click", () => {
+        const folded = target.classList.toggle("is-folded");
+        trigger.setAttribute("aria-expanded", folded ? "false" : "true");
+        trigger.classList.toggle("is-open", !folded);
+      });
+    });
+
+    document.querySelectorAll(".mobile-tab[data-view]").forEach((btn) => {
+      btn.addEventListener("click", () => switchView(btn.dataset.view));
+    });
+
+    const moreSheet = document.getElementById("mobile-more-sheet");
+    const openMore = () => moreSheet?.showModal?.();
+    const closeMore = () => moreSheet?.close?.();
+
+    document.getElementById("mobile-more-btn")?.addEventListener("click", openMore);
+    document.getElementById("mobile-more-close")?.addEventListener("click", closeMore);
+    document.getElementById("mobile-topbar-pref")?.addEventListener("click", openMore);
+
+    document.querySelectorAll("[data-mobile-nav]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        switchView(btn.dataset.mobileNav);
+        closeMore();
+      });
+    });
+
+    document.getElementById("mobile-logout-btn")?.addEventListener("click", () => {
+      document.getElementById("btn-logout")?.click();
+    });
+
+    moreSheet?.addEventListener("click", (e) => {
+      if (e.target === moreSheet) closeMore();
+    });
+
+    ["change", "input"].forEach((evt) => {
+      els.hdrBranch?.addEventListener(evt, refreshMobileOrderSummaries);
+      els.hdrOrderer?.addEventListener(evt, refreshMobileOrderSummaries);
+      cabinetEls.hdrBranch?.addEventListener(evt, refreshMobileOrderSummaries);
+      cabinetEls.hdrOrderer?.addEventListener(evt, refreshMobileOrderSummaries);
+    });
+    refreshMobileOrderSummaries();
+    updateMobileChrome(getActiveViewName());
   }
 
   bindSearchHistorySwipe();
@@ -4178,6 +4296,14 @@
   initLangSwitcher(refreshLanguage);
   initThemeSwitcher();
   initPrefPanel();
+  initMobileShell();
+  ({
+    products,
+    cabinetProducts,
+    orders,
+    productsVersion,
+    cabinetProductsVersion,
+  } = repairPersistedStorageOnBoot());
   branches = loadBranches();
   renderSearchPreview();
   renderSearchPreview(cabinetOrderingCtx);

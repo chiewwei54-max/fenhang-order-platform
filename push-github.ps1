@@ -29,15 +29,34 @@ if (-not $git) {
 Set-Location $src
 Write-Host "Using Git:" $git
 
+function Get-AppVersion {
+  $versionFile = Join-Path $src "version.js"
+  if (-not (Test-Path $versionFile)) { return "0.0.0" }
+  $m = Select-String -Path $versionFile -Pattern 'APP_VERSION\s*=\s*"([^"]+)"' | Select-Object -First 1
+  if ($m) { return $m.Matches.Groups[1].Value }
+  return "0.0.0"
+}
+
+function Test-HasNonVersionChanges {
+  param([string]$GitExe)
+  $porcelain = @(& $GitExe status --porcelain 2>$null)
+  return @($porcelain | Where-Object { $_ -notmatch 'version\.js' }).Count -gt 0
+}
+
 if (-not (Test-Path ".git")) {
   & $git init
   & $git branch -M main
 }
 
+if (Test-HasNonVersionChanges -GitExe $git) {
+  & (Join-Path $src "bump-version.ps1")
+}
+
 & $git add .
 $status = & $git status --porcelain
 if ($status) {
-  & $git commit -m "Initial commit: branch ordering platform"
+  $ver = Get-AppVersion
+  & $git commit -m "Release v$ver"
 } else {
   Write-Host "No new changes to commit."
 }

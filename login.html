@@ -3,9 +3,11 @@
 <head>
   <script src="storage-bridge.js"></script>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#1a2332" />
   <title data-i18n-title-page="login.title">登录 - 分行订货平台</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="mobile.css" />
 </head>
 <body class="login-page">
   <div class="login-card">
@@ -54,8 +56,10 @@
       <p id="login-error" class="login-error" hidden></p>
       <button type="submit" class="btn btn-primary btn-lg login-btn" data-i18n="login.submit">登 录</button>
     </form>
+    <p class="app-version app-version-login" data-app-version></p>
   </div>
 
+  <script src="version.js"></script>
   <script src="i18n.js"></script>
   <script>
     const SESSION_KEY = "orderPlatform_session";
