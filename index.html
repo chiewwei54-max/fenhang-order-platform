@@ -6,8 +6,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title data-i18n-title-page="appTitle">分行订货平台</title>
   <link rel="stylesheet" href="styles.css" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
 </head>
 <body>
   <script>
@@ -435,6 +433,8 @@
           <div class="products-warehouse-block">
             <div class="inventory-excel-admin panel">
               <h3 data-i18n="products.inventoryExcel">📥 上传最新库存 Excel</h3>
+              <p class="hint" data-i18n="products.inventoryHint"></p>
+              <p class="excel-columns hint" data-i18n="products.inventoryFields"></p>
               <div class="excel-actions">
                 <button class="btn btn-secondary" id="btn-download-inventory-template" data-i18n="products.dlInventoryTpl">下载库存 Excel 模板</button>
                 <button class="btn btn-ghost" id="btn-export-inventory" data-i18n="products.exportInventory">导出当前库存数据</button>
@@ -462,6 +462,8 @@
                       <th data-i18n="products.previewProduct">商品</th>
                       <th data-i18n="order.category">分类</th>
                       <th data-i18n="products.caseQty">箱数</th>
+                      <th data-i18n="order.unitPrice">Cost</th>
+                      <th data-i18n="order.barcode">Barcode</th>
                       <th data-i18n="order.sellPrice">卖价</th>
                     </tr>
                   </thead>

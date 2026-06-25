@@ -18,7 +18,8 @@
   --shadow: 0 1px 4px rgba(26, 35, 50, 0.06);
   --shadow-md: 0 4px 20px rgba(26, 35, 50, 0.08);
   --focus-ring: 0 0 0 3px color-mix(in srgb, var(--primary) 28%, transparent);
-  --font: "Noto Sans SC", system-ui, sans-serif;
+  --font: "Microsoft YaHei UI", "Microsoft YaHei", "微软雅黑", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei", sans-serif;
+  --font-mono: Consolas, "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", monospace;
   --login-bg: linear-gradient(135deg, #eef2f7 0%, #dbeafe 100%);
 }
 
@@ -64,6 +65,9 @@
 
 html {
   scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 html,
@@ -73,6 +77,53 @@ body {
   font-family: var(--font);
   color: var(--text);
   background: var(--bg);
+}
+
+button,
+input,
+select,
+textarea,
+optgroup,
+option {
+  font-family: inherit;
+}
+
+/* 现货目录、订单管理、分行订购管理：统一华语字体 */
+#view-ordering,
+#view-orders,
+#view-suggestions {
+  font-family: var(--font);
+}
+
+.product-card-name,
+.product-card-desc,
+.product-card-suggest,
+.orders-item-name,
+.cart-line-name,
+.preview-name,
+.preview-cat,
+.preview-dept,
+.suggestions-matrix-table .col-item-name,
+.over-min-alerts-table .col-item-name {
+  font-family: var(--font);
+}
+
+.product-card-id,
+.product-card-barcode,
+.orders-item-code,
+.search-suggestion-code,
+.search-suggestion-barcode,
+.preview-code,
+.preview-barcode,
+.data-table code {
+  font-family: var(--font-mono);
+}
+
+html:lang(en) .product-card-name,
+html:lang(en) .orders-item-name,
+html:lang(ms) .product-card-name,
+html:lang(ms) .orders-item-name {
+  font-family: var(--font);
 }
 
 .app {
@@ -696,7 +747,7 @@ textarea.remark-required-over-min {
 
 .search-suggestion-barcode {
   font-size: 11px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   color: #64748b;
 }
 
@@ -782,6 +833,7 @@ textarea.remark-required-over-min {
   font-size: 14px;
   font-weight: 600;
   color: var(--text);
+  font-family: var(--font);
   line-height: 1.4;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -792,7 +844,7 @@ textarea.remark-required-over-min {
 .search-preview-code {
   margin-top: 4px;
   font-size: 13px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   color: var(--primary);
   font-weight: 600;
 }
@@ -858,12 +910,13 @@ textarea.remark-required-over-min {
 .search-suggestion-code {
   font-size: 13px;
   color: var(--primary);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 .search-suggestion-name {
   font-size: 12px;
   color: var(--text);
+  font-family: var(--font);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1114,7 +1167,7 @@ textarea.remark-required-over-min {
   position: relative;
   background: var(--surface);
   border-radius: 10px;
-  overflow: visible;
+  overflow: hidden;
   border: 1px solid var(--border);
   box-shadow: 0 1px 3px rgba(26, 35, 50, 0.06);
   transition: box-shadow 0.2s;
@@ -1210,30 +1263,44 @@ textarea.remark-required-over-min {
   flex: 1;
   gap: 3px;
   padding: 6px 8px 8px;
+  min-width: 0;
+  width: 100%;
 }
 
 .product-card-id {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-mono);
   font-size: 14px;
   font-weight: 700;
   color: var(--primary);
   background: var(--primary-light);
   padding: 5px 8px;
   border-radius: 6px;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
   text-align: center;
   line-height: 1.2;
-  word-break: break-all;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .product-card-barcode {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
   color: #475569;
   text-align: center;
   line-height: 1.2;
-  word-break: break-all;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .product-card-barcode-label {
@@ -1283,6 +1350,8 @@ textarea.remark-required-over-min {
   justify-content: center;
   gap: 4px;
   margin-top: 1px;
+  min-width: 0;
+  width: 100%;
 }
 
 .product-card-case {
@@ -1539,6 +1608,8 @@ textarea.remark-required-over-min {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
+  width: 100%;
 }
 
 #view-ordering .product-card-compact .product-card-stock-wrap {
@@ -2909,7 +2980,7 @@ textarea.remark-required-over-min {
   display: inline-block;
   font-size: 16px;
   font-weight: 700;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   color: var(--primary);
   letter-spacing: 0.02em;
   line-height: 1.3;
@@ -4046,7 +4117,7 @@ textarea.remark-required-over-min {
 
 .preview-code {
   display: block;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 700;
   color: var(--primary);
@@ -4108,6 +4179,27 @@ textarea.remark-required-over-min {
   color: var(--primary);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+.preview-cell-cost {
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.preview-cell-barcode {
+  min-width: 88px;
+  max-width: 140px;
+}
+
+.preview-barcode {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  word-break: break-all;
 }
 
 .stock-input {
@@ -4516,6 +4608,7 @@ textarea.remark-required-over-min {
   font-size: 13px;
   font-weight: 500;
   color: var(--text);
+  font-family: var(--font);
   line-height: 1.4;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -4819,7 +4912,17 @@ textarea.remark-required-over-min {
   }
 
   .main {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #view-ordering,
+  #view-cabinet-reserve {
     overflow-x: hidden;
+  }
+
+  #view-ordering .product-grid-spot > .product-card {
+    width: 100%;
   }
 
   .order-header {
@@ -4929,17 +5032,33 @@ textarea.remark-required-over-min {
   }
 
   #view-ordering .product-card-compact .product-card-id {
-    font-size: 12px;
-    padding: 4px 6px;
+    font-size: 11px;
+    padding: 3px 5px;
+    letter-spacing: 0;
+  }
+
+  #view-ordering .product-card-compact .product-card-barcode {
+    font-size: 9px;
+    line-height: 1.15;
+  }
+
+  .suggestions-matrix-table th.col-item-code,
+  .suggestions-matrix-table td.col-item-code,
+  .suggestions-matrix-table th.col-item-name,
+  .suggestions-matrix-table td.col-item-name {
+    position: -webkit-sticky;
+    position: sticky;
+  }
+
+  .suggestions-matrix-section-min-order th.col-check,
+  .suggestions-matrix-section-min-order td.col-check {
+    position: -webkit-sticky;
+    position: sticky;
   }
 
   #view-ordering .product-card-compact .product-card-name {
     font-size: 12px;
     -webkit-line-clamp: 3;
-  }
-
-  #view-ordering .product-card-compact .product-card-barcode {
-    font-size: 10px;
   }
 
   #view-ordering .product-card-compact .product-card-order .qty-btn {
@@ -4965,6 +5084,11 @@ textarea.remark-required-over-min {
   .product-card-id {
     font-size: 12px;
     padding: 4px 6px;
+    letter-spacing: 0;
+  }
+
+  .product-card-barcode {
+    font-size: 10px;
   }
 
   .product-card-image {

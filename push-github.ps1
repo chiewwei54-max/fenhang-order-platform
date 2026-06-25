@@ -51,7 +51,16 @@ if ($remotes -notcontains "origin") {
 
 Write-Host ""
 Write-Host "Pushing to GitHub..."
-& $git push -u origin main
+$env:GIT_SSL_NO_REVOKE = "1"
+& $git -c http.schannelCheckRevoke=false -c http.sslVerify=true push -u origin main
+if ($LASTEXITCODE -ne 0) {
+  Write-Host ""
+  Write-Host "Push failed (often GitHub login or Windows SSL). Options:"
+  Write-Host "  1) Open GitHub Desktop -> Repository -> Push origin"
+  Write-Host "  2) Or run: git -c http.schannelCheckRevoke=false push -u origin main"
+  Write-Host "     after signing in with: git credential-manager github login"
+  exit $LASTEXITCODE
+}
 
 Write-Host ""
 Write-Host "Done. Opening Vercel to import the repo..."

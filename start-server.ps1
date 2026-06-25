@@ -77,7 +77,7 @@ while ($listener.IsListening) {
   }
 
   if (($path -eq "/api/storage" -or $path -eq "/api/storage/migrate") -and $req.HttpMethod -eq "POST") {
-    $reader = New-Object IO.StreamReader($req.InputStream, $req.ContentEncoding)
+    $reader = New-Object IO.StreamReader($req.InputStream, [Text.UTF8Encoding]::new($false))
     $body = $reader.ReadToEnd()
     $reader.Close()
     try {

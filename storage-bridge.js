@@ -33,7 +33,7 @@
 
     document.documentElement.innerHTML =
       '<head><meta charset="UTF-8"><title>跳转中</title></head>' +
-      '<body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">' +
+      '<body style="font-family:Microsoft YaHei UI,Microsoft YaHei,PingFang SC,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">' +
       "<p>正在同步数据并跳转到 localhost…</p></body>";
 
     fetch(LOCALHOST_ORIGIN + "/api/storage/migrate", {
@@ -54,7 +54,7 @@
     if (!localStorage.getItem("orderPlatform_products")) {
       try {
         const xhr = new XMLHttpRequest();
-        xhr.open("GET", "storage/local-data.json", false);
+        xhr.open("GET", "storage/seed.json", false);
         xhr.send();
         if (xhr.status === 200) {
           const snapshot = JSON.parse(xhr.responseText || "{}");

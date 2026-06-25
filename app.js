@@ -33,6 +33,14 @@
   let detailOrderId = null;
   const PAGE_BTN_WINDOW = 7;
 
+  function displayItemName(itemName, itemCode = "") {
+    return escapeHtml(cleanDisplayText(itemName, itemCode));
+  }
+
+  function displayTextLabel(text, fallback = "") {
+    return escapeHtml(cleanDisplayText(text, fallback));
+  }
+
   const els = {
     views: document.querySelectorAll(".view"),
     navItems: document.querySelectorAll(".nav-item"),
@@ -387,6 +395,11 @@
   function syncAllViews(options = {}) {
     products = loadProducts();
     productsVersion = getProductsVersion();
+    const orderRepair = repairOrderItemNames(orders, products);
+    if (orderRepair.changed) {
+      orders = orderRepair.orders;
+      saveOrders(orders);
+    }
     branchMinOrders = loadBranchMinOrders();
     branchMinOrdersVersion = getBranchMinOrdersVersion();
     syncCartWithProducts();
@@ -931,7 +944,7 @@
     ctx.els.searchPreview.innerHTML = `
       <div class="search-preview-photo">${renderProductThumb(product, 112)}</div>
       <div class="search-preview-info">
-        <div class="search-preview-name">${escapeHtml(product.itemName)}</div>
+        <div class="search-preview-name">${displayItemName(product.itemName, product.itemCode)}</div>
         <div class="search-preview-code">${escapeHtml(product.itemCode)}</div>
       </div>`;
   }
@@ -987,7 +1000,7 @@
         ${renderProductThumb(p, 36)}
         <span class="search-suggestion-body">
           <strong class="search-suggestion-code">${escapeHtml(p.itemCode)}</strong>
-          <span class="search-suggestion-name">${escapeHtml(p.itemName)}</span>
+          <span class="search-suggestion-name">${displayItemName(p.itemName, p.itemCode)}</span>
           ${meta}
         </span>
       </button>`;
@@ -1052,16 +1065,20 @@
     const reserved = isCabinetOrderingCtx(ctx) && p.cabinetReserved;
     const available = p.orderableQty > 0 && !reserved;
     const cartQty = ctx.cart.get(p.itemCode)?.quantity || 0;
-    const desc = [p.spec, p.category].filter(Boolean).join(" · ");
+    const desc = [p.spec, p.category]
+      .map((text) => cleanDisplayText(text, ""))
+      .filter(Boolean)
+      .map(escapeHtml)
+      .join(" · ");
     const restockDate = estimateRestockDate();
     const serialHtml =
       serialNo != null
         ? `<span class="product-card-serial">${serialNo}</span>`
         : "";
     const barcodeHtml = p.barcode
-      ? `<div class="product-card-barcode"><span class="product-card-barcode-label">${t("order.barcode")}</span>${escapeHtml(p.barcode)}</div>`
+      ? `<div class="product-card-barcode" title="${escapeHtml(p.barcode)}"><span class="product-card-barcode-label">${t("order.barcode")}</span>${escapeHtml(p.barcode)}</div>`
       : "";
-    const metaHtml = `<div class="product-card-id">${escapeHtml(p.itemCode)}</div>
+    const metaHtml = `<div class="product-card-id" title="${escapeHtml(p.itemCode)}">${escapeHtml(p.itemCode)}</div>
         ${barcodeHtml}
         <div class="product-card-meta">
           <span class="product-card-case">${t("order.unitsPerCase", { n: p.caseQty ?? 0, unit: escapeHtml(p.unit || "") })}</span>
@@ -1140,7 +1157,7 @@
         <div class="product-card-image">${renderProductThumb(p, thumbSize)}</div>
         <div class="product-card-body">
           ${topHtml}
-          <h3 class="product-card-name">${escapeHtml(p.itemName)}</h3>
+          <h3 class="product-card-name">${displayItemName(p.itemName, p.itemCode)}</h3>
           ${desc ? `<p class="product-card-desc">${escapeHtml(desc)}</p>` : ""}
           ${suggestHtml}
           ${overMinWarn}
@@ -1423,7 +1440,7 @@
               : ""
           }
           <td class="col-item-code"><span class="orders-item-code">${escapeHtml(row.itemCode)}</span></td>
-          <td class="col-item-name"><span class="orders-item-name">${escapeHtml(row.itemName)}</span></td>
+          <td class="col-item-name"><span class="orders-item-name">${displayItemName(row.itemName, row.itemCode)}</span></td>
           ${branchCells}
         </tr>`;
       })
@@ -1564,7 +1581,7 @@
             title="${escapeHtml(t("suggestionsPage.overMinJumpTitle"))}"
           ><code class="orders-item-code">${escapeHtml(e.itemCode)}</code></button>
         </td>
-        <td class="col-item-name"><span class="orders-item-name">${escapeHtml(e.itemName)}</span></td>
+        <td class="col-item-name"><span class="orders-item-name">${displayItemName(e.itemName, e.itemCode)}</span></td>
         <td class="num">${e.quantity}</td>
         <td class="num">${e.minOrder}</td>
         <td class="over-min-reason">${escapeHtml(e.reason)}</td>
@@ -1980,7 +1997,7 @@
           <div class="cart-col cart-col-img">${renderProductThumb(latest, 52)}</div>
           <div class="cart-col cart-col-product">
             <code class="cart-line-code">${escapeHtml(latest.itemCode)}</code>
-            <span class="cart-line-name" title="${escapeHtml(latest.itemName)}">${escapeHtml(latest.itemName)}</span>
+            <span class="cart-line-name" title="${displayItemName(latest.itemName, latest.itemCode)}">${displayItemName(latest.itemName, latest.itemCode)}</span>
             ${
               overMin
                 ? `<span class="cart-over-min-tag">${t("order.overMinOnCard", { qty: quantity, min: minOrder })}</span>`
@@ -2327,7 +2344,7 @@
               (line) => `
             <tr data-split-code="${escapeHtml(line.itemCode)}">
               <td><code>${escapeHtml(line.itemCode)}</code></td>
-              <td>${escapeHtml(line.itemName)}</td>
+              <td>${displayItemName(line.itemName, line.itemCode)}</td>
               <td>${line.quantity}</td>
               <td><input type="number" class="split-qty-input" min="0" max="${line.quantity}" value="${Math.floor(line.quantity / 2)}" /></td>
               <td class="split-batch2-qty">${Math.ceil(line.quantity / 2)}</td>
@@ -2642,7 +2659,7 @@
           .join("");
         return `<tr>
           <td class="col-item-code"><span class="orders-item-code">${escapeHtml(row.itemCode)}</span></td>
-          <td class="col-item-name"><span class="orders-item-name">${escapeHtml(row.itemName)}</span></td>
+          <td class="col-item-name"><span class="orders-item-name">${displayItemName(row.itemName, row.itemCode)}</span></td>
           ${branchCells}
           <td class="num col-total"><strong>${row.total}</strong></td>
         </tr>`;
@@ -2818,7 +2835,7 @@
               <tr>
                 ${showLineBranch ? `<td class="col-branch"><span class="orders-branch-name">${escapeHtml(l.branchName || order.branchName || "")}</span></td>` : ""}
                 <td class="col-item-code"><span class="orders-item-code">${escapeHtml(l.itemCode)}</span></td>
-                <td class="col-item-name"><span class="orders-item-name">${escapeHtml(l.itemName)}</span></td>
+                <td class="col-item-name"><span class="orders-item-name">${displayItemName(l.itemName, l.itemCode)}</span></td>
                 <td>${l.quantity} ${escapeHtml(l.unit || "")}</td>
                 <td>${formatMoney(l.unitPrice || 0)}</td>
                 <td>${formatMoney((l.quantity || 0) * (l.unitPrice || 0))}</td>
@@ -2873,7 +2890,7 @@
   function renderAdminProductPreview(pageItems) {
     if (!els.adminProductBody) return;
     if (!pageItems.length) {
-      els.adminProductBody.innerHTML = `<tr><td colspan="5" class="empty-cell">${t("products.emptyAdmin")}</td></tr>`;
+      els.adminProductBody.innerHTML = `<tr><td colspan="7" class="empty-cell">${t("products.emptyAdmin")}</td></tr>`;
       return;
     }
     els.adminProductBody.innerHTML = pageItems
@@ -2893,6 +2910,8 @@
           <strong class="preview-case-num">${p.caseQty ?? 0}</strong>
           <span class="preview-case-unit">${escapeHtml(p.unit || "")}</span>
         </td>
+        <td class="preview-cell-cost">${formatMoney(p.unitPrice)}</td>
+        <td class="preview-cell-barcode"><code class="preview-barcode">${escapeHtml(p.barcode || "—")}</code></td>
         <td class="preview-cell-price">${formatMoney(p.sellPrice ?? p.unitPrice)}</td>
       </tr>`
       )
@@ -4026,20 +4045,19 @@
       els.inventoryImportResult.innerHTML =
         `✓ 库存同步成功：共 ${result.total} 行，` +
         `覆盖 ${result.updated} 件，新增 ${result.added} 件，移除 ${result.removed} 件。` +
-        `<br/>现货目录已按 Excel 全部更新；新货柜预定商品库未变动。`;
+        `<br/>现货目录、商品分类与部门分类已按 Excel 全部更新；新货柜预定商品库未变动。`;
       return result;
     });
   }
 
   /* Inventory Excel */
   document.getElementById("btn-download-inventory-template").addEventListener("click", () => {
-    const source = products.length ? products : DEFAULT_PRODUCTS.map((p) => normalizeProduct({ ...p }));
-    downloadInventoryExcel("货仓库存模板.xlsx", source);
+    downloadInventoryExcel("现货目录模板.xlsx", [], { templateOnly: true });
     showToast(t("toast.inventoryTplDownloaded"));
   });
 
   document.getElementById("btn-export-inventory").addEventListener("click", () => {
-    downloadInventoryExcel(`stock_${todayISO()}.xlsx`, products);
+    downloadInventoryExcel(`现货目录_${todayISO()}.xlsx`, products);
     showToast(t("toast.inventoryExported", { n: products.length }));
   });
 
