@@ -1,9 +1,18 @@
-@echo off
-chcp 65001 >nul
-echo.
-echo 订货平台项目路径:
-echo   c:\Users\new\Desktop\分行订货平台_files
-echo.
-echo 在 GitHub Desktop 的 Local path 里粘贴上面路径，或点 Choose 选这个文件夹。
-echo.
-pause
+分行订货平台 - 使用说明
+================================
+
+【正确打开方式】
+  双击本文件夹里的：打开平台.bat
+
+  会自动启动本地服务，并在浏览器打开：
+  http://localhost:8080/login.html
+
+  登录账号：admin
+  登录密码：123456
+
+【不要这样做】
+  不要直接双击 login.html 或 index.html
+  （直接打开 HTML 无法加载 3000+ 商品数据，列表会为空）
+
+【项目路径】
+  c:\Users\new\Desktop\分行订货平台_files

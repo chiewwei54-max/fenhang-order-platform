@@ -1,0 +1,158 @@
+﻿$port = 8090
+$root = (Get-Location).Path
+$storageDir = Join-Path $root "storage"
+$storageFile = Join-Path $storageDir "local-data.json"
+$emptyStorage = '{"localStorage":{},"sessionStorage":{}}'
+
+if (-not (Test-Path $storageDir)) { New-Item -ItemType Directory -Path $storageDir | Out-Null }
+$uploadsDir = Join-Path $storageDir "uploads"
+if (-not (Test-Path $uploadsDir)) { New-Item -ItemType Directory -Path $uploadsDir | Out-Null }
+
+function Get-StorageJson {
+  if (-not (Test-Path $storageFile)) { return $emptyStorage }
+  $content = Get-Content $storageFile -Raw -Encoding UTF8
+  if ([string]::IsNullOrWhiteSpace($content)) { return $emptyStorage }
+  return $content
+}
+
+function Save-StorageJson($json) {
+  if ([string]::IsNullOrWhiteSpace($json)) { $json = $emptyStorage }
+  [IO.File]::WriteAllText($storageFile, $json, [Text.UTF8Encoding]::new($false))
+}
+
+function Send-Bytes($ctx, $bytes, $statusCode, $contentType) {
+  $ctx.Response.StatusCode = $statusCode
+  $ctx.Response.ContentType = $contentType
+  $ctx.Response.Headers.Add("Access-Control-Allow-Origin", "*")
+  $ctx.Response.ContentLength64 = $bytes.Length
+  $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length)
+}
+
+$mimeMap = @{
+  ".html" = "text/html; charset=utf-8"
+  ".js" = "application/javascript; charset=utf-8"
+  ".css" = "text/css; charset=utf-8"
+  ".json" = "application/json; charset=utf-8"
+  ".png" = "image/png"
+  ".jpg" = "image/jpeg"
+  ".jpeg" = "image/jpeg"
+  ".gif" = "image/gif"
+  ".svg" = "image/svg+xml"
+  ".ico" = "image/x-icon"
+  ".woff2" = "font/woff2"
+}
+
+$listener = New-Object System.Net.HttpListener
+$listener.Prefixes.Add("http://+:$port/")
+try {
+  $listener.Start()
+} catch {
+  $existingOk = $false
+  try {
+    $health = Invoke-WebRequest -Uri "http://localhost:$port/api/storage" -UseBasicParsing -TimeoutSec 2
+    $existingOk = $health.StatusCode -eq 200
+  } catch {
+    $existingOk = $false
+  }
+  if ($existingOk) {
+    Write-Host "Platform is already running at http://localhost:$port/index.html"
+    Write-Host "Data file: $storageFile"
+    return
+  }
+  Write-Error "Failed to start server on port $port. $($_.Exception.Message)"
+  Write-Host "If you want to share on LAN, run start-server.cmd as Administrator once, or allow port $port in Windows Firewall."
+  exit 1
+}
+
+$localIp = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object {
+  $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" -and $_.PrefixOrigin -ne "WellKnown"
+} | Select-Object -First 1 -ExpandProperty IPAddress)
+Write-Host "Serving locally at http://localhost:$port/login.html"
+if ($localIp) { Write-Host "Share on LAN: http://$localIp`:$port/login.html" }
+Write-Host "Data file: $storageFile"
+
+while ($listener.IsListening) {
+  $ctx = $listener.GetContext()
+  $req = $ctx.Request
+  $path = $req.Url.LocalPath
+
+  $ctx.Response.Headers.Add("Access-Control-Allow-Origin", "*")
+  $ctx.Response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+  $ctx.Response.Headers.Add("Access-Control-Allow-Headers", "Content-Type")
+
+  if ($req.HttpMethod -eq "OPTIONS") {
+    $ctx.Response.StatusCode = 204
+    $ctx.Response.Close()
+    continue
+  }
+
+  if ($path -eq "/api/storage" -and $req.HttpMethod -eq "GET") {
+    $bytes = [Text.Encoding]::UTF8.GetBytes((Get-StorageJson))
+    Send-Bytes $ctx $bytes 200 "application/json; charset=utf-8"
+    $ctx.Response.Close()
+    continue
+  }
+
+  if (($path -eq "/api/storage" -or $path -eq "/api/storage/migrate") -and $req.HttpMethod -eq "POST") {
+    $reader = New-Object IO.StreamReader($req.InputStream, [Text.UTF8Encoding]::new($false))
+    $body = $reader.ReadToEnd()
+    $reader.Close()
+    try {
+      $null = $body | ConvertFrom-Json
+      Save-StorageJson $body
+      $bytes = [Text.Encoding]::UTF8.GetBytes('{"ok":true}')
+      Send-Bytes $ctx $bytes 200 "application/json; charset=utf-8"
+    } catch {
+      $bytes = [Text.Encoding]::UTF8.GetBytes("Invalid JSON")
+      Send-Bytes $ctx $bytes 400 "text/plain; charset=utf-8"
+    }
+    $ctx.Response.Close()
+    continue
+  }
+
+  if ($path -eq "/api/inventory/save" -and $req.HttpMethod -eq "POST") {
+    if (-not (Test-Path $uploadsDir)) { New-Item -ItemType Directory -Path $uploadsDir | Out-Null }
+    $reader = New-Object IO.StreamReader($req.InputStream, [Text.UTF8Encoding]::new($false))
+    $body = $reader.ReadToEnd()
+    $reader.Close()
+    try {
+      $payload = $body | ConvertFrom-Json
+      if (-not $payload.fileBase64) { throw "missing fileBase64" }
+      $fileBytes = [Convert]::FromBase64String([string]$payload.fileBase64)
+      $rawName = [string]$payload.fileName
+      if ([string]::IsNullOrWhiteSpace($rawName)) { $rawName = "spot-catalog.xlsx" }
+      $safeName = [IO.Path]::GetFileName($rawName)
+      if ([string]::IsNullOrWhiteSpace($safeName)) { $safeName = "spot-catalog.xlsx" }
+      $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+      $archivePath = Join-Path $uploadsDir ("spot-catalog_" + $stamp + "_" + $safeName)
+      $latestPath = Join-Path $uploadsDir "spot-catalog-latest.xlsx"
+      [IO.File]::WriteAllBytes($archivePath, $fileBytes)
+      [IO.File]::WriteAllBytes($latestPath, $fileBytes)
+      $resp = @{ ok = $true; archive = "storage/uploads/" + [IO.Path]::GetFileName($archivePath); latest = "storage/uploads/spot-catalog-latest.xlsx"; bytes = $fileBytes.Length } | ConvertTo-Json -Compress
+      $bytes = [Text.Encoding]::UTF8.GetBytes($resp)
+      Send-Bytes $ctx $bytes 200 "application/json; charset=utf-8"
+    } catch {
+      $err = @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+      $bytes = [Text.Encoding]::UTF8.GetBytes($err)
+      Send-Bytes $ctx $bytes 400 "application/json; charset=utf-8"
+    }
+    $ctx.Response.Close()
+    continue
+  }
+
+  if ($path -eq "/") { $path = "/index.html" }
+  $relative = $path.TrimStart("/").Replace("/", [IO.Path]::DirectorySeparatorChar)
+  $file = Join-Path $root $relative
+
+  if ((Test-Path $file -PathType Leaf)) {
+    $bytes = [IO.File]::ReadAllBytes($file)
+    $ext = [IO.Path]::GetExtension($file).ToLower()
+    $mime = $mimeMap[$ext]
+    if (-not $mime) { $mime = "application/octet-stream" }
+    Send-Bytes $ctx $bytes 200 $mime
+  } else {
+    $bytes = [Text.Encoding]::UTF8.GetBytes("404 Not Found")
+    Send-Bytes $ctx $bytes 404 "text/plain; charset=utf-8"
+  }
+  $ctx.Response.Close()
+}

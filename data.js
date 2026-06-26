@@ -30,7 +30,15 @@ const STORAGE_KEYS = {
   overMinDismissed: "orderPlatform_overMinDismissed",
   counter: "orderPlatform_counter",
   storageSyncVersion: "orderPlatform_storageSyncVersion",
+  catalogEpoch: "orderPlatform_catalogEpoch",
+  cabinetCatalogEpoch: "orderPlatform_cabinetCatalogEpoch",
 };
+
+/** 现货目录重置世代：变更后自动清空旧商品记录（含乱码），需重新上传 Excel */
+const CATALOG_RESET_EPOCH = "4";
+
+/** 新货柜预定商品库重置世代：变更后自动清空旧预定商品（含乱码），需重新上传 Excel */
+const CABINET_CATALOG_RESET_EPOCH = "1";
 
 const PRODUCTS_UPDATED_EVENT = "orderPlatform:productsUpdated";
 const CABINET_PRODUCTS_UPDATED_EVENT = "orderPlatform:cabinetProductsUpdated";
@@ -54,20 +62,7 @@ const EXCEL_COLUMNS = [
   { key: "imageUrl", zh: "图片URL", en: "imageUrl" },
 ];
 
-/** 新货柜预定商品 Excel 列（与商品管理字段一致，不含操作） */
-const CABINET_EXCEL_COLUMNS = [
-  { key: "itemCode", zh: "ITEM CODE", en: "itemcode" },
-  { key: "itemName", zh: "商品名称", en: "itemname" },
-  { key: "unit", zh: "单位", en: "unit" },
-  { key: "caseQty", zh: "CTN(PCS)", en: "ctn(pcs)" },
-  { key: "unitPrice", zh: "COST PRICE", en: "costprice" },
-  { key: "sellPrice", zh: "SELLING PRICE", en: "sellingprice" },
-  { key: "cabinetReserved", zh: "已预定", en: "reserved" },
-  { key: "imageUrl", zh: "PHOTO", en: "photo" },
-  { key: "barcode", zh: "Barcode", en: "barcode" },
-];
-
-/** 现货目录统一 Excel 模块（下载模板、导出、上传均使用此列定义） */
+/** 现货目录 / 新货柜预定统一 Excel 列（下载模板、导出、上传均使用此列定义） */
 const INVENTORY_EXCEL_COLUMNS = [
   { key: "caseQty", zh: "箱数/ctn", en: "caseqty" },
   { key: "category", zh: "Item Group", en: "itemgroup" },
@@ -82,6 +77,9 @@ const INVENTORY_EXCEL_COLUMNS = [
 ];
 
 const INVENTORY_EXCEL_SHEET_NAME = "现货目录";
+
+/** 新货柜预定 Excel 与现货目录使用同一套列定义 */
+const CABINET_EXCEL_SHEET_NAME = "新货柜预定";
 
 /** 订货管理 Excel 导入列（商品代码 + 订购数量） */
 const ORDER_IMPORT_COLUMNS = [
@@ -429,25 +427,236 @@ function sanitizeInventoryProduct(p) {
   };
 }
 
+/** 新货柜预定商品：清洗文本字段，避免乱码残留 */
+function sanitizeCabinetProduct(p) {
+  if (!p) return p;
+  const code = p.itemCode || "";
+  return {
+    ...p,
+    itemName: sanitizeCatalogTextField(p.itemName, code),
+    unit: sanitizeCatalogTextField(p.unit, "") || p.unit || "个",
+    barcode: p.barcode ? sanitizeCatalogTextField(p.barcode, "") : p.barcode || "",
+    cabinetNo: p.cabinetNo ? sanitizeCatalogTextField(p.cabinetNo, "") : p.cabinetNo || "",
+  };
+}
+
 /** 现货目录 Excel 上传后：清洗商品并同步订单行商品名称 */
 function finalizeInventoryCatalogUpload(products, orders) {
   const cleanProducts = sortProductsByClassification(
     (products || []).map(sanitizeInventoryProduct)
   );
-  const catalog = getMergedProductCatalog();
-  cleanProducts.forEach((p) => {
+  const cabinet = loadCabinetProducts();
+  const seen = new Set(
+    cleanProducts.map((p) => String(p.itemCode || "").trim().toLowerCase())
+  );
+  const catalog = [...cleanProducts];
+  cabinet.forEach((p) => {
     const key = String(p.itemCode || "").trim().toLowerCase();
-    const idx = catalog.findIndex(
-      (c) => String(c.itemCode || "").trim().toLowerCase() === key
-    );
-    if (idx >= 0) catalog[idx] = p;
-    else catalog.push(p);
+    if (key && !seen.has(key)) {
+      catalog.push(p);
+      seen.add(key);
+    }
   });
   const { orders: cleanOrders, changed: ordersChanged } = repairOrderItemNames(
     orders || [],
     catalog
   );
   return { products: cleanProducts, orders: cleanOrders, ordersChanged };
+}
+
+/** 新货柜预定 Excel 上传后：清洗商品并同步订单行商品名称 */
+function finalizeCabinetCatalogUpload(products, orders) {
+  const cleanProducts = sortProductsByClassification(
+    (products || []).map((p) => finalizeCabinetProduct(sanitizeCabinetProduct(p)))
+  );
+  const spot = loadProducts();
+  const seen = new Set(spot.map((p) => String(p.itemCode || "").trim().toLowerCase()));
+  const catalog = [...spot];
+  cleanProducts.forEach((p) => {
+    const key = String(p.itemCode || "").trim().toLowerCase();
+    if (key && !seen.has(key)) {
+      catalog.push(p);
+      seen.add(key);
+    }
+  });
+  const { orders: cleanOrders, changed: ordersChanged } = repairOrderItemNames(
+    orders || [],
+    catalog
+  );
+  return { products: cleanProducts, orders: cleanOrders, ordersChanged };
+}
+
+/** 清除现货目录全部旧商品（含乱码记录），订单行名称同步为编码/新目录 */
+function purgeLegacySpotCatalog() {
+  saveProducts([]);
+  const cabinet = loadCabinetProducts();
+  const orders = loadOrders();
+  const { orders: repaired, changed } = repairOrderItemNames(orders, cabinet);
+  if (changed) saveOrders(repaired);
+  return { orders: repaired, ordersChanged: changed };
+}
+
+/** 清除新货柜预定全部旧商品（含乱码记录），订单行名称同步为现货目录/编码 */
+function purgeLegacyCabinetCatalog() {
+  saveCabinetProducts([]);
+  const spot = loadProducts();
+  const orders = loadOrders();
+  const { orders: repaired, changed } = repairOrderItemNames(orders, spot);
+  if (changed) saveOrders(repaired);
+  return { orders: repaired, ordersChanged: changed };
+}
+
+function getCatalogEpoch() {
+  return localStorage.getItem(STORAGE_KEYS.catalogEpoch) || "0";
+}
+
+function setCatalogEpoch(epoch) {
+  localStorage.setItem(STORAGE_KEYS.catalogEpoch, String(epoch));
+  bumpStorageSyncVersion();
+}
+
+/** 世代升级：一次性清空旧现货目录，防止刷新后乱码商品再次出现 */
+function runCatalogEpochMigration() {
+  if (getCatalogEpoch() === CATALOG_RESET_EPOCH) {
+    return { purged: false, orders: loadOrders() };
+  }
+  setCatalogEpoch(CATALOG_RESET_EPOCH);
+  const { orders, ordersChanged } = purgeLegacySpotCatalog();
+  flushStorageToServer();
+  return { purged: true, orders, ordersChanged };
+}
+
+function getCabinetCatalogEpoch() {
+  return localStorage.getItem(STORAGE_KEYS.cabinetCatalogEpoch) || "0";
+}
+
+function setCabinetCatalogEpoch(epoch) {
+  localStorage.setItem(STORAGE_KEYS.cabinetCatalogEpoch, String(epoch));
+  bumpStorageSyncVersion();
+}
+
+/** 世代升级：一次性清空旧新货柜预定商品库，防止刷新后乱码商品再次出现 */
+function runCabinetEpochMigration() {
+  if (getCabinetCatalogEpoch() === CABINET_CATALOG_RESET_EPOCH) {
+    return { purged: false, orders: null };
+  }
+  setCabinetCatalogEpoch(CABINET_CATALOG_RESET_EPOCH);
+  const { orders, ordersChanged } = purgeLegacyCabinetCatalog();
+  flushStorageToServer();
+  return { purged: true, orders, ordersChanged };
+}
+
+/** 立即将 localStorage 写入本地服务器（上传现货目录后防止旧 local-data 回灌） */
+function flushStorageToServer() {
+  if (typeof fetch === "undefined") {
+    return Promise.resolve({ ok: false, backend: "none" });
+  }
+  if (
+    location.protocol !== "http:" ||
+    location.hostname !== "localhost" ||
+    location.port !== "8080"
+  ) {
+    return Promise.resolve({ ok: false, backend: "browser" });
+  }
+  const collect = (store) => {
+    const data = {};
+    for (let i = 0; i < store.length; i++) {
+      const key = store.key(i);
+      if (key) data[key] = store.getItem(key);
+    }
+    return data;
+  };
+  return fetch("/api/storage", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      localStorage: collect(localStorage),
+      sessionStorage: collect(sessionStorage),
+    }),
+  })
+    .then((res) => ({ ok: res.ok, backend: "server" }))
+    .catch(() => ({ ok: false, backend: "server-error" }));
+}
+
+function isLocalBackendAvailable() {
+  return (
+    typeof location !== "undefined" &&
+    location.protocol === "http:" &&
+    location.hostname === "localhost" &&
+    location.port === "8080"
+  );
+}
+
+/** 浏览器本地现货目录为空时，从 localhost 后台恢复已保存的数据 */
+function hydrateProductsFromServerSnapshot() {
+  if (!isLocalBackendAvailable()) return null;
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", "/api/storage", false);
+    xhr.send();
+    if (xhr.status !== 200) return null;
+    const snapshot = JSON.parse(xhr.responseText || "{}");
+    const serverCount = readStorageProductCount(snapshot?.localStorage || {});
+    if (serverCount <= 0) return null;
+    Object.entries(snapshot.localStorage || {}).forEach(([key, value]) => {
+      if (value != null) localStorage.setItem(key, value);
+    });
+    Object.entries(snapshot.sessionStorage || {}).forEach(([key, value]) => {
+      if (value != null) sessionStorage.setItem(key, value);
+    });
+    return loadProducts();
+  } catch {
+    return null;
+  }
+}
+
+function readStorageProductCount(ls) {
+  const raw = ls?.[STORAGE_KEYS.products];
+  if (!raw) return 0;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result || "");
+      const base64 = text.includes(",") ? text.split(",")[1] : text;
+      resolve(base64);
+    };
+    reader.onerror = () => reject(reader.error || new Error("文件读取失败"));
+    reader.readAsDataURL(file);
+  });
+}
+
+/** 将上传的现货目录 Excel 保存到本地后台 storage/uploads */
+function saveInventoryExcelToBackend(file) {
+  if (!file) return Promise.reject(new Error("没有可保存的文件"));
+  if (!isLocalBackendAvailable()) {
+    return Promise.resolve({ ok: true, backend: "browser", message: "browser-only" });
+  }
+  return fileToBase64(file).then((fileBase64) =>
+    fetch("/api/inventory/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fileName: file.name || "spot-catalog.xlsx",
+        fileBase64,
+        savedAt: new Date().toISOString(),
+      }),
+    }).then(async (res) => {
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || data.message || `保存失败 (${res.status})`);
+      }
+      return data;
+    })
+  );
 }
 
 function findProductByCode(products, itemCode) {
@@ -499,7 +708,7 @@ function repairProductTextFields(p) {
 
 /** 新货柜预定：箱数即可预定数量 */
 function finalizeCabinetProduct(p) {
-  const n = normalizeProduct(p);
+  const n = normalizeProduct(sanitizeCabinetProduct(p));
   if (n.cabinetReserved) {
     return { ...n, orderableQty: 0 };
   }
@@ -521,24 +730,33 @@ function repairProductOrderable(p) {
 }
 
 function repairPersistedStorageOnBoot() {
+  const spotMigration = runCatalogEpochMigration();
+  const cabinetMigration = runCabinetEpochMigration();
   const nextProducts = loadProducts();
   const nextCabinet = loadCabinetProducts();
-  const nextOrders = loadOrders();
+  let nextOrders = loadOrders();
+  if (cabinetMigration.orders) nextOrders = cabinetMigration.orders;
+  else if (spotMigration.orders) nextOrders = spotMigration.orders;
   return {
     products: nextProducts,
     cabinetProducts: nextCabinet,
     orders: nextOrders,
     productsVersion: getProductsVersion(),
     cabinetProductsVersion: getCabinetProductsVersion(),
+    catalogPurged: spotMigration.purged,
+    cabinetPurged: cabinetMigration.purged,
   };
 }
 
 function loadProducts() {
   const saved = localStorage.getItem(STORAGE_KEYS.products);
-  if (saved) {
+  if (saved != null) {
     try {
+      const parsed = JSON.parse(saved);
+      if (!Array.isArray(parsed)) throw new Error("invalid products");
+      if (!parsed.length) return [];
       let repairedAny = false;
-      const products = JSON.parse(saved).map((p) => {
+      const products = parsed.map((p) => {
         const { product, changed } = repairProductTextFields(p);
         if (changed) repairedAny = true;
         return repairProductOrderable(product);
@@ -1183,10 +1401,6 @@ function productsToSheetRows(products) {
   return sheetRowsFromColumns(products, EXCEL_COLUMNS);
 }
 
-function cabinetProductsToSheetRows(products) {
-  return sheetRowsFromColumns(products, CABINET_EXCEL_COLUMNS);
-}
-
 function parseCabinetReservedValue(val) {
   if (val === undefined || val === null) return undefined;
   const s = String(val).trim().toLowerCase();
@@ -1194,114 +1408,6 @@ function parseCabinetReservedValue(val) {
   if (["是", "yes", "y", "1", "true", "已预定", "预定", "reserved"].includes(s)) return true;
   if (["否", "no", "n", "0", "false", "未预定", "否"].includes(s)) return false;
   return undefined;
-}
-
-/** 解析新货柜预定 Excel 行 → 商品对象 */
-function rowToCabinetProduct(row, headerMap) {
-  const get = (key) => {
-    const idx = headerMap[key];
-    if (idx === undefined) return undefined;
-    const val = row[idx];
-    return val === undefined || val === null ? "" : String(val).trim();
-  };
-
-  const itemCode = get("itemCode");
-  if (!itemCode) return null;
-
-  const num = (key, fallback = 0) => {
-    const v = get(key);
-    const n = parseFloat(v);
-    return Number.isFinite(n) ? n : fallback;
-  };
-
-  const imageUrl = get("imageUrl");
-  const itemName = get("itemName");
-  const unit = get("unit");
-  const reservedRaw = headerMap.cabinetReserved !== undefined ? row[headerMap.cabinetReserved] : undefined;
-  const cabinetReserved = parseCabinetReservedValue(reservedRaw);
-
-  const patch = {
-    itemCode,
-    caseQty: num("caseQty"),
-    barcode: get("barcode") || "",
-    unitPrice: num("unitPrice"),
-    sellPrice: num("sellPrice", num("unitPrice")),
-  };
-  if (itemName) patch.itemName = itemName;
-  if (unit) patch.unit = unit;
-  if (cabinetReserved !== undefined) patch.cabinetReserved = cabinetReserved;
-  if (imageUrl) patch.imageUrl = imageUrl;
-  return patch;
-}
-
-/** 识别新货柜预定表头列索引 */
-function buildCabinetHeaderMap(headerRow) {
-  const map = buildHeaderMap(headerRow, CABINET_EXCEL_COLUMNS);
-  const normalized = headerRow.map((h) =>
-    String(h ?? "")
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, "")
-  );
-
-  const alias = (key, tests) => {
-    if (map[key] !== undefined) return;
-    const idx = normalized.findIndex((h) => tests.some((t) => h === t || h.includes(t)));
-    if (idx >= 0) map[key] = idx;
-  };
-
-  alias("itemCode", ["itemcode", "item", "商品代码", "商品编码", "代码", "编码"]);
-  alias("itemName", ["itemname", "description", "商品名称", "名称", "品名"]);
-  alias("unit", ["unit", "uom", "单位"]);
-  alias("caseQty", ["ctn(pcs)", "ctn", "箱数", "caseqty"]);
-  alias("unitPrice", ["costprice", "cost", "单价", "unitprice"]);
-  alias("sellPrice", ["sellingprice", "selling", "卖价", "sellprice"]);
-  alias("cabinetReserved", ["已预定", "reserved", "cabinetreserved", "预定"]);
-  alias("imageUrl", ["photo", "imageurl", "图片", "图片url", "产品照片", "照片"]);
-  alias("barcode", ["barcode", "条形码", "条码"]);
-
-  return map;
-}
-
-/** 合并预定商品导入：Excel 全量同步，未出现在文件中的商品移除 */
-function mergeCabinetProducts(existing, imported) {
-  const existingMap = new Map(existing.map((p) => [p.itemCode, p]));
-  const uploadedCodes = new Set(imported.map((p) => p.itemCode));
-  let added = 0;
-  let updated = 0;
-
-  const products = imported.map((patch) => {
-    const prev = existingMap.get(patch.itemCode);
-    if (prev) {
-      updated += 1;
-      return finalizeCabinetProduct({ ...prev, ...patch });
-    }
-    added += 1;
-    return finalizeCabinetProduct({
-      itemCode: patch.itemCode,
-      itemName: patch.itemName || patch.itemCode,
-      spec: "",
-      unit: patch.unit || "个",
-      brand: "其他",
-      category: "未分类",
-      department: "通用",
-      stockQty: 0,
-      orderableQty: 0,
-      safetyStock: 10,
-      imageUrl: patch.imageUrl || productImage(patch.itemCode, patch.itemName || patch.itemCode),
-      ...patch,
-    });
-  });
-
-  const removed = existing.filter((p) => !uploadedCodes.has(p.itemCode)).length;
-
-  return {
-    products: sortProductsByClassification(products.map(finalizeCabinetProduct)),
-    added,
-    updated,
-    removed,
-    total: imported.length,
-  };
 }
 
 /** 解析 Excel 行 → 商品对象 */
@@ -1555,24 +1661,74 @@ function buildProductFromInventoryPatch(patch, prev) {
 
 /**
  * 库存 Excel 上传：仅更新现货目录（products），新货柜预定商品库（cabinetProducts）不受影响。
- * - 上传文件中的商品：按 Excel 覆盖/新增
+ * - 上传文件中的商品：仅按 Excel 全新建立，不继承旧记录字段
  * - 未出现在 Excel 中的旧商品：从现货目录移除
  */
-function mergeInventoryUpdate(existing, importedPatches) {
-  const existingMap = new Map(existing.map((p) => [p.itemCode, p]));
+function mergeInventoryUpdate(existing, importedPatches, { fullReplace = false } = {}) {
+  const existingMap = fullReplace
+    ? new Map()
+    : new Map(existing.map((p) => [p.itemCode, p]));
   const uploadedCodes = new Set(importedPatches.map((p) => p.itemCode));
   let updated = 0;
   let added = 0;
 
   const products = importedPatches.map((patch) => {
     const code = patch.itemCode;
-    const prev = existingMap.get(code);
+    const prev = fullReplace ? undefined : existingMap.get(code);
     if (prev) updated += 1;
     else added += 1;
     return buildProductFromInventoryPatch(patch, prev);
   });
 
-  const removed = existing.filter((p) => !uploadedCodes.has(p.itemCode)).length;
+  const removed = fullReplace
+    ? (existing || []).length
+    : existing.filter((p) => !uploadedCodes.has(p.itemCode)).length;
+
+  return {
+    products: sortProductsByClassification(products),
+    updated,
+    added,
+    removed,
+    total: importedPatches.length,
+  };
+}
+
+/** 新货柜预定：由库存 Excel 行构建商品（保留已预定/货柜号等预定专属字段） */
+function buildCabinetProductFromInventoryPatch(patch, prev) {
+  const base = buildProductFromInventoryPatch(patch, prev);
+  return finalizeCabinetProduct(
+    sanitizeCabinetProduct({
+      ...base,
+      cabinetReserved: prev?.cabinetReserved ?? base.cabinetReserved ?? false,
+      cabinetNo: prev?.cabinetNo ?? base.cabinetNo ?? "",
+    })
+  );
+}
+
+/**
+ * 新货柜预定 Excel 上传：与现货目录使用同一套列，仅更新 cabinetProducts。
+ * - Excel 中出现的商品：按行建立/更新
+ * - 未出现在 Excel 中的旧商品：从预定库移除
+ */
+function mergeCabinetInventoryUpdate(existing, importedPatches, { fullReplace = false } = {}) {
+  const existingMap = fullReplace
+    ? new Map()
+    : new Map(existing.map((p) => [p.itemCode, p]));
+  const uploadedCodes = new Set(importedPatches.map((p) => p.itemCode));
+  let updated = 0;
+  let added = 0;
+
+  const products = importedPatches.map((patch) => {
+    const code = patch.itemCode;
+    const prev = fullReplace ? undefined : existingMap.get(code);
+    if (prev) updated += 1;
+    else added += 1;
+    return buildCabinetProductFromInventoryPatch(patch, prev);
+  });
+
+  const removed = fullReplace
+    ? (existing || []).length
+    : existing.filter((p) => !uploadedCodes.has(p.itemCode)).length;
 
   return {
     products: sortProductsByClassification(products),
@@ -1597,7 +1753,7 @@ function sheetRowsFromColumns(products, columns) {
   return [header, ...rows];
 }
 
-function downloadInventoryExcel(filename, products, { templateOnly = false } = {}) {
+function downloadInventoryExcel(filename, products, { templateOnly = false, sheetName = INVENTORY_EXCEL_SHEET_NAME } = {}) {
   const rows = templateOnly
     ? [INVENTORY_EXCEL_COLUMNS.map((c) => c.zh)]
     : sheetRowsFromColumns(products, INVENTORY_EXCEL_COLUMNS);
@@ -1607,8 +1763,16 @@ function downloadInventoryExcel(filename, products, { templateOnly = false } = {
       c.key === "imageUrl" ? 22 : c.key === "itemName" ? 28 : c.key === "department" ? 18 : 14,
   }));
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, INVENTORY_EXCEL_SHEET_NAME);
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
   XLSX.writeFile(wb, filename);
+}
+
+/** 新货柜预定：下载/导出与现货目录同一套 Excel 列 */
+function downloadCabinetExcel(filename, products, options = {}) {
+  return downloadInventoryExcel(filename, sortProductsByClassification(products), {
+    sheetName: CABINET_EXCEL_SHEET_NAME,
+    ...options,
+  });
 }
 
 function parseInventoryExcelFile(file) {
@@ -1655,50 +1819,9 @@ function downloadExcel(filename, products) {
   XLSX.writeFile(wb, filename);
 }
 
-function downloadCabinetExcel(filename, products) {
-  const ws = XLSX.utils.aoa_to_sheet(cabinetProductsToSheetRows(sortProductsByClassification(products)));
-  ws["!cols"] = CABINET_EXCEL_COLUMNS.map((c) => ({
-    wch: c.key === "itemName" ? 24 : c.key === "imageUrl" ? 22 : c.key === "cabinetReserved" ? 10 : 14,
-  }));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "预定商品");
-  XLSX.writeFile(wb, filename);
-}
-
+/** @deprecated 使用 parseInventoryExcelFile，新货柜与现货目录共用同一解析器 */
 function parseCabinetExcelFile(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target.result);
-        const wb = XLSX.read(data, { type: "array" });
-        const sheet = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
-        if (rows.length < 2) {
-          reject(new Error("Excel 文件为空或缺少数据行"));
-          return;
-        }
-        const headerMap = buildCabinetHeaderMap(rows[0]);
-        if (headerMap.itemCode === undefined) {
-          reject(new Error("未找到「ITEM CODE」列，请使用预定商品标准模板"));
-          return;
-        }
-        const products = rows
-          .slice(1)
-          .map((row) => rowToCabinetProduct(row, headerMap))
-          .filter(Boolean);
-        if (!products.length) {
-          reject(new Error("未解析到有效商品行"));
-          return;
-        }
-        resolve(products);
-      } catch (err) {
-        reject(err);
-      }
-    };
-    reader.onerror = () => reject(new Error("文件读取失败"));
-    reader.readAsArrayBuffer(file);
-  });
+  return parseInventoryExcelFile(file);
 }
 
 function parseExcelFile(file) {

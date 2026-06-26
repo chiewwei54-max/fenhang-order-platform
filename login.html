@@ -6,8 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#1a2332" />
   <title data-i18n-title-page="login.title">登录 - 分行订货平台</title>
-  <link rel="stylesheet" href="styles.css" />
-  <link rel="stylesheet" href="mobile.css" />
+  <link rel="stylesheet" href="styles.css?v=20260626-lang1" />
+  <link rel="stylesheet" href="mobile.css?v=20260626-lang1" />
 </head>
 <body class="login-page">
   <div class="login-card">
@@ -25,6 +25,14 @@
         <span class="pref-toggle-chevron" aria-hidden="true">▾</span>
       </button>
       <div class="pref-dropdown pref-dropdown-login" id="pref-dropdown-login" hidden>
+        <div class="pref-section">
+          <span class="pref-section-label" data-i18n="lang.label">语言</span>
+          <div class="lang-btns">
+            <button type="button" class="lang-btn" data-lang="zh">华语</button>
+            <button type="button" class="lang-btn" data-lang="en">英文</button>
+            <button type="button" class="lang-btn" data-lang="ms">国语</button>
+          </div>
+        </div>
         <div class="pref-section">
           <span class="pref-section-label" data-i18n="theme.label">主题</span>
           <div class="theme-btns">
@@ -60,7 +68,7 @@
   </div>
 
   <script src="version.js"></script>
-  <script src="i18n.js"></script>
+  <script src="i18n.js?v=20260626-lang1"></script>
   <script>
     const SESSION_KEY = "orderPlatform_session";
 

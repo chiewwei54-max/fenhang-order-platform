@@ -11,7 +11,8 @@
   let adminPage = 1;
   let cabinetAdminPage = 1;
   let productFormMode = "main";
-  const LIST_PAGE_SIZE = 150;
+  const LIST_PAGE_SIZE = 100;
+  const PRODUCT_GRID_COLUMNS = 1;
   const SEARCH_HISTORY_LIMIT = 10;
   let productsVersion = getProductsVersion();
   let searchRecords = [];
@@ -28,7 +29,15 @@
   let suggestionSearchTimer = null;
   let ordersListTimer = null;
   let searchSuggestTimer = null;
+  let orderingFilterTimer = null;
+  let spotFilterCacheKey = "";
+  let spotFilterCacheResult = null;
+  let cabinetFilterCacheKey = "";
+  let cabinetFilterCacheResult = null;
+  let spotProductCodeMapVersion = "";
+  let spotProductCodeMap = new Map();
   let standardSearchSuggestIndex = -1;
+  let spotSearchJumpCode = null;
   let splitOrderId = null;
   let detailOrderId = null;
   const PAGE_BTN_WINDOW = 7;
@@ -95,7 +104,6 @@
     orderFilterStatus: document.getElementById("order-filter-status"),
     detailStatusSelect: document.getElementById("detail-status-select"),
     adminProductBody: document.getElementById("admin-product-body"),
-    stockEditBody: document.getElementById("stock-edit-body"),
     adminSearch: document.getElementById("admin-search"),
     productCount: document.getElementById("product-count"),
     productFormDialog: document.getElementById("product-form-dialog"),
@@ -105,8 +113,8 @@
     reportOrders: document.getElementById("report-orders"),
     branchList: document.getElementById("branch-list"),
     newBranch: document.getElementById("new-branch"),
-    importResult: document.getElementById("import-result"),
     inventoryImportResult: document.getElementById("inventory-import-result"),
+    inventorySyncStatus: document.getElementById("inventory-sync-status"),
     orderImportResult: document.getElementById("order-import-result"),
     cabinetStockEditBody: document.getElementById("cabinet-stock-edit-body"),
     cabinetAdminSearch: document.getElementById("cabinet-admin-search"),
@@ -247,7 +255,7 @@
     return id === "cabinet-reserve" ? cabinetOrderingCtx : standardOrderingCtx;
   }
 
-  const CART_BAR_HIDDEN_VIEWS = new Set(["orders", "suggestions", "products"]);
+  const CART_BAR_HIDDEN_VIEWS = new Set(["orders", "suggestions", "products", "reports", "settings"]);
 
   function getCatalogForCtx(ctx) {
     return ctx?.id === "cabinet-reserve" ? cabinetProducts : products;
@@ -329,6 +337,7 @@
     cabinetProducts = sortProductsByClassification(nextProducts);
     saveCabinetProducts(cabinetProducts);
     cabinetProductsVersion = getCabinetProductsVersion();
+    invalidateSpotFilterCache();
     syncCartWithProducts();
     if (getActiveViewName() === "cabinet-reserve") renderCabinetReserve({ preserveView: true });
     if (getActiveViewName() === "products") renderCabinetProductAdmin();
@@ -412,6 +421,7 @@
   function syncAllViews(options = {}) {
     products = loadProducts();
     productsVersion = getProductsVersion();
+    invalidateSpotFilterCache();
     const orderRepair = repairOrderItemNames(orders, getOrderItemCatalog());
     if (orderRepair.changed) {
       orders = orderRepair.orders;
@@ -427,13 +437,14 @@
 
   /** 保存商品数据并立即同步全部前台页面 */
   function persistProducts(nextProducts, options = {}) {
-    if (options.fromInventoryUpload) {
+    if (options.fromInventoryUpload || options.syncSpotCatalog) {
       resetWarehouseFiltersAfterUpload();
     }
     products = sortProductsByClassification(nextProducts);
     saveProducts(products);
     productsVersion = getProductsVersion();
-    if (options.fromInventoryUpload) {
+    invalidateSpotFilterCache();
+    if (options.fromInventoryUpload || options.syncSpotCatalog) {
       syncWarehouseProductsViews(options);
     } else {
       syncAllViews(options);
@@ -451,6 +462,10 @@
     els.navItems.forEach((n) => n.classList.toggle("active", n.dataset.view === name));
     updateCartBarVisibility(name);
     updateMobileChrome(name);
+    if (name === "ordering" || name === "cabinet-reserve") {
+      window.scrollTo(0, 0);
+      document.querySelector(".main")?.scrollTo?.(0, 0);
+    }
     if (name === "ordering") renderOrdering();
     if (name === "orders") renderOrdersList();
     if (name === "suggestions") renderSuggestionsPage();
@@ -470,7 +485,7 @@
     els.orderFilterBranch.innerHTML = `<option value="">${t("orders.allBranches")}</option>${opts}`;
     if (branches.length) {
       els.hdrBranch.value = branches.includes(prevHdr) ? prevHdr : branches[0];
-      els.hdrBranchDisplay.value = els.hdrBranch.value;
+      if (els.hdrBranchDisplay) els.hdrBranchDisplay.value = els.hdrBranch.value;
       if (cabinetEls.hdrBranch) {
         cabinetEls.hdrBranch.value = branches.includes(prevCabHdr) ? prevCabHdr : branches[0];
         if (cabinetEls.hdrBranchDisplay) cabinetEls.hdrBranchDisplay.value = cabinetEls.hdrBranch.value;
@@ -499,6 +514,7 @@
       departments.map((d) => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join("");
 
     if (categories.includes(catVal)) v.filterCategory.value = catVal;
+    else v.filterCategory.value = "";
     if (departments.includes(deptVal)) v.filterDepartment.value = deptVal;
     else v.filterDepartment.value = "";
   }
@@ -538,27 +554,113 @@
     updateOverMinOrderHint(standardOrderingCtx);
   }
 
-  /** 库存 Excel 上传后：仅刷新现货目录相关页面，新货柜预定保持不变 */
+  /** 库存 Excel 上传后：刷新现货目录相关页面（含前台订货页） */
   function syncWarehouseProductsViews(options = {}) {
+    products = loadProducts();
+    productsVersion = getProductsVersion();
+    invalidateSpotFilterCache();
     syncStandardCartWithProducts();
     populateFilters(standardOrderingCtx);
+    renderOrdering({ preserveView: !options.fromInventoryUpload });
     const view = getActiveViewName();
-    if (view === "ordering") renderOrdering({ preserveView: true });
-    else if (view === "orders") renderOrdersList();
+    if (view === "orders") renderOrdersList();
     else if (view === "suggestions") renderSuggestionsPageContent({ skipFilterPopulate: false });
     else if (view === "products") renderProductAdmin();
     else if (view === "reports") renderReports();
     if (options.toast) showToast(options.toast);
   }
 
+  function invalidateSpotFilterCache() {
+    spotFilterCacheKey = "";
+    spotFilterCacheResult = null;
+    cabinetFilterCacheKey = "";
+    cabinetFilterCacheResult = null;
+    spotProductCodeMapVersion = "";
+    spotProductCodeMap = new Map();
+  }
+
+  function buildSpotFilterCacheKey(ctx) {
+    const v = ctx.els;
+    const catalogVersion = isCabinetOrderingCtx(ctx) ? cabinetProductsVersion : productsVersion;
+    return [
+      ctx.id,
+      catalogVersion,
+      getCatalogForCtx(ctx).length,
+      v.searchCode?.value || "",
+      ctx.searchRecords.join("|"),
+      v.filterCategory?.value || "",
+      v.filterDepartment?.value || "",
+      v.filterStock?.value || "",
+      spotSearchJumpCode || "",
+    ].join("\0");
+  }
+
+  function getFilterCache(ctx) {
+    return isCabinetOrderingCtx(ctx)
+      ? { key: cabinetFilterCacheKey, result: cabinetFilterCacheResult }
+      : { key: spotFilterCacheKey, result: spotFilterCacheResult };
+  }
+
+  function setFilterCache(ctx, key, result) {
+    if (isCabinetOrderingCtx(ctx)) {
+      cabinetFilterCacheKey = key;
+      cabinetFilterCacheResult = result;
+    } else {
+      spotFilterCacheKey = key;
+      spotFilterCacheResult = result;
+    }
+  }
+
+  function getSpotProductCodeMap() {
+    if (spotProductCodeMapVersion === productsVersion && spotProductCodeMap.size) {
+      return spotProductCodeMap;
+    }
+    spotProductCodeMap = new Map();
+    products.forEach((item) => {
+      const key = String(item.itemCode || "").trim().toLowerCase();
+      if (key && !spotProductCodeMap.has(key)) spotProductCodeMap.set(key, item);
+    });
+    spotProductCodeMapVersion = productsVersion;
+    return spotProductCodeMap;
+  }
+
+  function scheduleOrderingFilterRender(ctx, delay = 160) {
+    if (!isSpotOrderingCtx(ctx)) {
+      renderOrderingView(ctx);
+      return;
+    }
+    clearTimeout(orderingFilterTimer);
+    orderingFilterTimer = setTimeout(() => renderOrderingView(ctx), delay);
+  }
+
   function getFilteredProducts(ctx = standardOrderingCtx) {
     const v = ctx.els;
     const catalog = getCatalogForCtx(ctx);
-    const code = v.searchCode.value.trim().toLowerCase();
+    if (isSpotOrderingCtx(ctx) || isCabinetOrderingCtx(ctx)) {
+      const cacheKey = buildSpotFilterCacheKey(ctx);
+      const cache = getFilterCache(ctx);
+      if (cacheKey === cache.key && cache.result) {
+        return cache.result;
+      }
+    }
+    const rawCode = v.searchCode.value.trim();
+    const shortcut = parseQtyItemCodeShortcut(rawCode);
+    const code = (shortcut ? shortcut.codePart : rawCode).toLowerCase();
     const category = v.filterCategory?.value || "";
     const department = v.filterDepartment?.value || "";
     const stock = v.filterStock?.value || "";
     const recordSet = new Set(ctx.searchRecords.map((c) => c.toUpperCase()));
+
+    if (!ctx.searchRecords.length && rawCode && !shortcut) {
+      const jumpTarget = resolveSearchJumpTarget(rawCode, catalog);
+      if (jumpTarget) {
+        let ok = true;
+        if (category && jumpTarget.category !== category) ok = false;
+        if (department && jumpTarget.department !== department) ok = false;
+        if (stock && getStockStatus(jumpTarget) !== stock) ok = false;
+        if (ok) return sortProductsByClassification([jumpTarget]);
+      }
+    }
 
     const filtered = catalog.filter((p) => {
       if (ctx.searchRecords.length) {
@@ -577,7 +679,11 @@
       return true;
     });
 
-    return sortProductsByClassification(filtered);
+    const result = sortProductsByClassification(filtered);
+    if (isSpotOrderingCtx(ctx) || isCabinetOrderingCtx(ctx)) {
+      setFilterCache(ctx, buildSpotFilterCacheKey(ctx), result);
+    }
+    return result;
   }
 
   function addSearchRecord(ctx, itemCode) {
@@ -857,6 +963,47 @@
     });
   }
 
+  function getSearchInputTerm(ctx = standardOrderingCtx) {
+    const raw = ctx.els.searchCode.value.trim();
+    const shortcut = parseQtyItemCodeShortcut(raw);
+    return shortcut ? shortcut.codePart : raw;
+  }
+
+  function parseQtyItemCodeShortcut(term) {
+    const match = String(term || "")
+      .trim()
+      .match(/^(\d+)\s*\*\s*(.+)$/);
+    if (!match) return null;
+    const qty = parseInt(match[1], 10);
+    const codePart = match[2].trim();
+    if (!codePart || !Number.isFinite(qty) || qty <= 0) return null;
+    return { qty, codePart };
+  }
+
+  function tryAddToCartFromSearchShortcut(ctx = standardOrderingCtx) {
+    if (!isSpotOrderingCtx(ctx)) return false;
+    const parsed = parseQtyItemCodeShortcut(ctx.els.searchCode.value);
+    if (!parsed) return false;
+    const catalog = getCatalogForCtx(ctx);
+    const product =
+      resolveSearchJumpTarget(parsed.codePart, catalog) ||
+      resolveSearchProduct(parsed.codePart, catalog);
+    if (!product) {
+      showToast(t("order.searchPreviewEmpty"));
+      return true;
+    }
+    addToCart(ctx, product.itemCode, parsed.qty);
+    showToast(t("toast.shortcutAdded", { n: parsed.qty, code: product.itemCode }));
+    ctx.els.searchCode.value = "";
+    spotSearchJumpCode = null;
+    toggleSpotSearchClearBtn();
+    hideSearchSuggestions(ctx);
+    ctx.page = 1;
+    renderOrderingView(ctx);
+    focusSearchInput(ctx);
+    return true;
+  }
+
   function tryAddSearchRecordFromInput(ctx = standardOrderingCtx) {
     const term = ctx.els.searchCode.value.trim();
     if (!term) return false;
@@ -935,6 +1082,63 @@
           (p.barcode && String(p.barcode).toLowerCase().includes(q))
       ) || null
     );
+  }
+
+  /** 搜索框输入：精确或唯一前缀匹配时定位到该商品 */
+  function resolveSearchJumpTarget(term, catalog = products) {
+    const q = term.trim().toLowerCase();
+    if (!q) return null;
+    const exact = catalog.find(
+      (p) =>
+        p.itemCode.toLowerCase() === q ||
+        (p.barcode && String(p.barcode).toLowerCase() === q)
+    );
+    if (exact) return exact;
+    const codeMatches = catalog.filter((p) => p.itemCode.toLowerCase().startsWith(q));
+    if (codeMatches.length === 1) return codeMatches[0];
+    const barcodeMatches = catalog.filter(
+      (p) => p.barcode && String(p.barcode).toLowerCase().startsWith(q)
+    );
+    if (barcodeMatches.length === 1) return barcodeMatches[0];
+    return null;
+  }
+
+  function tryJumpToSearchInput(ctx = standardOrderingCtx) {
+    if (!isSpotOrderingCtx(ctx) || ctx.searchRecords.length) return;
+    const term = ctx.els.searchCode.value.trim();
+    if (!term || parseQtyItemCodeShortcut(term)) {
+      if (!term) {
+        spotSearchJumpCode = null;
+        ctx.page = 1;
+        scheduleOrderingFilterRender(ctx);
+      }
+      return;
+    }
+    const match = resolveSearchJumpTarget(term, getCatalogForCtx(ctx));
+    if (!match) {
+      spotSearchJumpCode = null;
+      ctx.page = 1;
+      scheduleOrderingFilterRender(ctx);
+      return;
+    }
+    const prevJump = spotSearchJumpCode;
+    spotSearchJumpCode = match.itemCode;
+    ctx.page = 1;
+    scheduleOrderingFilterRender(ctx, prevJump === match.itemCode ? 0 : 120);
+    if (prevJump === match.itemCode) return;
+    requestAnimationFrame(() => {
+      const card = ctx.els.productGrid.querySelector(
+        `.product-card[data-code="${CSS.escape(match.itemCode)}"]`
+      );
+      if (!card) return;
+      card.scrollIntoView({ behavior: "smooth", block: "center" });
+      card.classList.add("product-card-highlight");
+      setTimeout(() => card.classList.remove("product-card-highlight"), 2500);
+      const exact =
+        term.toLowerCase() === match.itemCode.toLowerCase() ||
+        (match.barcode && term.toLowerCase() === String(match.barcode).toLowerCase());
+      if (exact) focusProductQtyInput(ctx, match.itemCode);
+    });
   }
 
   function selectSearchSuggestionAt(ctx, index) {
@@ -1051,6 +1255,18 @@
     return d.toISOString().slice(0, 10);
   }
 
+  function getSpotCategoryTag(p) {
+    const dept = cleanDisplayText(p.department, "");
+    if (dept) return dept;
+
+    const codeKey = String(p.itemCode || "").trim().toLowerCase();
+    const spotMatch = codeKey ? getSpotProductCodeMap().get(codeKey) : null;
+    const spotDept = cleanDisplayText(spotMatch?.department, "");
+    if (spotDept) return spotDept;
+
+    return cleanDisplayText(p.category, "");
+  }
+
   function renderProductCardSuggestion(p, branchName, suggestionLookup) {
     if (!branchName) return "";
     const suggest = suggestionLookup.get(p.itemCode);
@@ -1080,6 +1296,7 @@
   }
 
   function renderProductCard(ctx, p, serialNo, suggestionLookup, branchName) {
+    const compact = isSpotOrderingCtx(ctx) || isCabinetOrderingCtx(ctx);
     const sellPrice = p.sellPrice ?? p.unitPrice;
     const reserved = isCabinetOrderingCtx(ctx) && p.cabinetReserved;
     const available = p.orderableQty > 0 && !reserved;
@@ -1097,15 +1314,16 @@
     const barcodeHtml = p.barcode
       ? `<div class="product-card-barcode" title="${escapeHtml(p.barcode)}"><span class="product-card-barcode-label">${t("order.barcode")}</span>${escapeHtml(p.barcode)}</div>`
       : "";
-    const metaHtml = `<div class="product-card-id" title="${escapeHtml(p.itemCode)}">${escapeHtml(p.itemCode)}</div>
+    const metaHtml = `<div class="product-card-id" title="${escapeHtml(p.itemCode)}${p.barcode ? " · " + escapeHtml(p.barcode) : ""}">${escapeHtml(p.itemCode)}</div>
         ${barcodeHtml}
         <div class="product-card-meta">
           <span class="product-card-case">${t("order.unitsPerCase", { n: p.caseQty ?? 0, unit: escapeHtml(p.unit || "") })}</span>
         </div>`;
 
-    const compact = isSpotOrderingCtx(ctx);
-    const thumbSize = compact ? 80 : 100;
-    const cardClass = `product-card${compact ? " product-card-compact" : ""}${available ? "" : " is-sold-out"}`;
+    const thumbSize = compact ? 56 : 100;
+    const cardClass = `product-card${compact ? " product-card-compact" : ""}${available ? "" : " is-sold-out"}${
+      cartQty > 0 ? " product-card-in-cart" : ""
+    }`;
 
     const stockHtml = reserved
       ? `<div class="product-stock-status out-stock product-stock-reserved"><span class="stock-dot"></span>${t("products.cabinetReserved")}</div>`
@@ -1114,7 +1332,7 @@
       : `<div class="product-stock-status out-stock"><span class="stock-dot"></span>${t("order.soldOut")}</div>`;
 
     const topHtml = compact
-      ? `<div class="product-card-top">${metaHtml}<div class="product-card-stock-wrap">${stockHtml}</div></div>`
+      ? ""
       : `${metaHtml}${stockHtml}`;
 
     const qtyValue = cartQty || 1;
@@ -1170,17 +1388,34 @@
           })}</div>`
         : "";
 
+    const catTagHtml = compact
+      ? (() => {
+          const tag = getSpotCategoryTag(p);
+          return tag ? `<div class="product-card-cat-tag">${escapeHtml(tag)}</div>` : "";
+        })()
+      : "";
+
+    const bodyHtml = compact
+      ? `${metaHtml}
+          <div class="product-card-stock-wrap">${stockHtml}</div>
+          <h3 class="product-card-name">${displayItemName(p.itemName, p.itemCode)}</h3>
+          ${catTagHtml}
+          ${suggestHtml}
+          ${overMinWarn}
+          ${actionHtml}`
+      : `${topHtml}
+          <h3 class="product-card-name">${displayItemName(p.itemName, p.itemCode)}</h3>
+          ${desc ? `<p class="product-card-desc">${escapeHtml(desc)}</p>` : ""}
+          ${suggestHtml}
+          ${overMinWarn}
+          ${actionHtml}`;
+
     return `
       <article class="${cardClass}" data-code="${escapeHtml(p.itemCode)}">
         ${serialHtml}
         <div class="product-card-image">${renderProductThumb(p, thumbSize)}</div>
         <div class="product-card-body">
-          ${topHtml}
-          <h3 class="product-card-name">${displayItemName(p.itemName, p.itemCode)}</h3>
-          ${desc ? `<p class="product-card-desc">${escapeHtml(desc)}</p>` : ""}
-          ${suggestHtml}
-          ${overMinWarn}
-          ${actionHtml}
+          ${bodyHtml}
         </div>
       </article>`;
   }
@@ -1207,39 +1442,76 @@
   }
 
   function renderOrderingView(ctx, options = {}) {
-    const { preserveView = false } = options;
+    const { preserveView = false, refreshFilters = false } = options;
     const scrollY = preserveView ? getOrderingScrollY() : null;
     const currentPage = ctx.page;
     const v = ctx.els;
 
-    populateFilters(ctx);
+    if (refreshFilters) populateFilters(ctx);
     const filtered = getFilteredProducts(ctx);
     const totalPages = Math.max(1, Math.ceil(filtered.length / LIST_PAGE_SIZE));
-    if (ctx.page > totalPages) ctx.page = totalPages;
-    if (preserveView) ctx.page = currentPage;
+    const targetPage = preserveView ? currentPage : ctx.page;
+    const prevPage = ctx.page;
+    ctx.page = Math.min(Math.max(1, targetPage), totalPages);
 
     const start = (ctx.page - 1) * LIST_PAGE_SIZE;
+    const end = Math.min(start + LIST_PAGE_SIZE, filtered.length);
     const pageItems = filtered.slice(start, start + LIST_PAGE_SIZE);
     const branchName = v.hdrBranch?.value || "";
     const catalog = getCatalogForCtx(ctx);
     const suggestionLookup = buildBranchSuggestionLookup(catalog, branchMinOrders, branchName);
 
+    v.productGrid.classList.toggle("product-grid-spot", isSpotOrderingCtx(ctx) || isCabinetOrderingCtx(ctx));
+    const catalogEmpty = catalog.length === 0;
+    const emptyLabel = catalogEmpty ? t("order.noCatalogData") : t("order.noProducts");
     v.productGrid.innerHTML = pageItems.length
       ? pageItems
           .map((p, i) => renderProductCard(ctx, p, start + i + 1, suggestionLookup, branchName))
           .join("")
-      : `<div class="product-grid-empty">${t("order.noProducts")}</div>`;
+      : `<div class="product-grid-empty">${emptyLabel}</div>`;
+
+    if (isSpotOrderingCtx(ctx)) {
+      const metaEl = document.getElementById("spot-product-panel-meta");
+      if (metaEl) {
+        if (filtered.length) {
+          metaEl.textContent = t("order.pageRange", {
+            from: start + 1,
+            to: end,
+            total: filtered.length,
+            page: ctx.page,
+            pages: totalPages,
+          });
+        } else {
+          metaEl.textContent = catalogEmpty ? "" : t("order.totalRows", { n: 0 });
+        }
+      }
+    }
 
     const prevAttr = ctx.paginationAttr.includes("cabinet") ? 'data-cabinet-page="prev"' : 'data-page="prev"';
     const nextAttr = ctx.paginationAttr.includes("cabinet") ? 'data-cabinet-page="next"' : 'data-page="next"';
+    const pageJumpAttr = ctx.paginationAttr.includes("cabinet")
+      ? "data-cabinet-page-jump"
+      : "data-page-jump";
+    const pageJumpGoAttr = ctx.paginationAttr.includes("cabinet")
+      ? "data-cabinet-page-jump-go"
+      : "data-page-jump-go";
     v.productPagination.innerHTML = `
-      <span>${t("order.totalRows", { n: filtered.length })}</span>
+      <span class="pagination-summary">${t("order.totalRows", { n: filtered.length })}</span>
       <div class="page-btns">
-        <button class="page-btn" ${prevAttr} ${ctx.page <= 1 ? "disabled" : ""}>‹</button>
+        <button class="page-btn" ${prevAttr} ${ctx.page <= 1 ? "disabled" : ""} aria-label="Previous">‹</button>
         ${buildPageButtons(ctx.page, totalPages, ctx.paginationAttr)}
-        <button class="page-btn" ${nextAttr} ${ctx.page >= totalPages ? "disabled" : ""}>›</button>
+        <button class="page-btn" ${nextAttr} ${ctx.page >= totalPages ? "disabled" : ""} aria-label="Next">›</button>
       </div>
-      <span>${t("order.perPage", { n: LIST_PAGE_SIZE })}</span>`;
+      <label class="pagination-jump">
+        <span>${t("order.pageOf", { page: ctx.page, total: totalPages })}</span>
+        <input type="number" min="1" max="${totalPages}" value="${ctx.page}" ${pageJumpAttr} aria-label="${t("order.jumpPage")}" />
+        <button type="button" class="btn btn-ghost btn-sm pagination-jump-btn" ${pageJumpGoAttr}>${t("order.jumpPageGo")}</button>
+      </label>
+      <span class="pagination-per-page">${t("order.perPage", { n: LIST_PAGE_SIZE })}</span>`;
+
+    if (!preserveView || prevPage !== ctx.page) {
+      v.productGrid.scrollTop = 0;
+    }
 
     if (getActiveOrderingCtx().id === ctx.id) updateCartBar();
     if (v.hdrCartCount) {
@@ -1250,7 +1522,7 @@
   }
 
   function renderOrdering(options = {}) {
-    renderOrderingView(standardOrderingCtx, options);
+    renderOrderingView(standardOrderingCtx, { refreshFilters: true, ...options });
   }
 
   function renderCabinetReserve(options = {}) {
@@ -1525,6 +1797,7 @@
   function refreshSuggestionsPage() {
     products = loadProducts();
     productsVersion = getProductsVersion();
+    invalidateSpotFilterCache();
     branchMinOrders = loadBranchMinOrders();
     branchMinOrdersVersion = getBranchMinOrdersVersion();
     populateSuggestionBulkBranches(true);
@@ -2873,14 +3146,30 @@
     els.productCount.textContent = products.length;
     renderAdminProductList();
     renderCabinetProductAdmin();
+    updateInventorySyncStatus();
   }
 
-  function syncStockRowsFromDom() {
-    els.stockEditBody?.querySelectorAll("tr[data-code]").forEach((row) => {
-      const code = row.dataset.code;
-      const product = products.find((p) => p.itemCode === code);
-      if (!product) return;
-      Object.assign(product, readStockFromRow(row));
+  function formatAdminSyncTime(version) {
+    const ms = parseInt(version, 10);
+    if (!Number.isFinite(ms) || ms <= 0) return "—";
+    try {
+      return new Date(ms).toLocaleString();
+    } catch {
+      return "—";
+    }
+  }
+
+  function updateInventorySyncStatus() {
+    if (!els.inventorySyncStatus) return;
+    if (!products.length) {
+      els.inventorySyncStatus.hidden = true;
+      els.inventorySyncStatus.textContent = "";
+      return;
+    }
+    els.inventorySyncStatus.hidden = false;
+    els.inventorySyncStatus.textContent = t("products.inventorySyncStatus", {
+      n: products.length,
+      time: formatAdminSyncTime(getProductsVersion()),
     });
   }
 
@@ -2962,10 +3251,6 @@
     renderAdminPagination({ filtered, totalPages });
   }
 
-  function renderStockEditTable() {
-    renderAdminProductList();
-  }
-
   function readCabinetStockFromRow(row) {
     const getNum = (field) => {
       const el = row.querySelector(`[data-field="${field}"]`);
@@ -2981,89 +3266,6 @@
     const sellPrice = getNum("sellPrice");
     if (sellPrice !== undefined) patch.sellPrice = sellPrice;
     return patch;
-  }
-
-  function readStockFromRow(row) {
-    const getNum = (field) => {
-      const el = row.querySelector(`[data-field="${field}"]`);
-      const n = parseFloat(el?.value);
-      return Number.isFinite(n) ? Math.max(0, n) : 0;
-    };
-    const getText = (field) => {
-      const el = row.querySelector(`[data-field="${field}"]`);
-      return el ? String(el.value ?? "").trim() : undefined;
-    };
-    const cabinetNo = getText("cabinetNo");
-    return {
-      stockQty: getNum("stockQty"),
-      caseQty: getNum("caseQty"),
-      orderableQty: getNum("orderableQty"),
-      safetyStock: getNum("safetyStock"),
-      unitPrice: getNum("unitPrice"),
-      sellPrice: getNum("sellPrice"),
-      ...(cabinetNo !== undefined ? { cabinetNo } : {}),
-    };
-  }
-
-  function applyStockFromRow(itemCode, row) {
-    const product = products.find((p) => p.itemCode === itemCode);
-    if (!product) return false;
-
-    const data = readStockFromRow(row);
-    if (data.orderableQty > data.stockQty) {
-      showToast(t("toast.orderableExceeds", { code: itemCode }));
-      return false;
-    }
-
-    Object.assign(product, normalizeProduct({ ...product, ...data }));
-    return true;
-  }
-
-  function saveAllStockChanges() {
-    if (!els.stockEditBody) {
-      showToast(t("toast.noData"));
-      return;
-    }
-    syncStockRowsFromDom();
-    const rows = els.stockEditBody.querySelectorAll("tr[data-code]");
-    if (!rows.length) {
-      showToast(t("toast.noData"));
-      return;
-    }
-
-    let saved = 0;
-    let failed = false;
-    rows.forEach((row) => {
-      const code = row.dataset.code;
-      if (applyStockFromRow(code, row)) saved += 1;
-      else failed = true;
-    });
-
-    if (saved) {
-      persistProducts(products, {
-        toast: t("toast.stockSaved", { n: saved }),
-      });
-      return;
-    }
-    if (failed) showToast(t("toast.stockPartial"));
-    else showToast(t("toast.noData"));
-  }
-
-  function saveSingleStock(itemCode) {
-    const row = els.stockEditBody?.querySelector(`tr[data-code="${CSS.escape(itemCode)}"]`);
-    if (!row) return;
-    if (applyStockFromRow(itemCode, row)) {
-      persistProducts(products, { toast: t("toast.itemUpdated", { code: itemCode }) });
-    }
-  }
-
-  function deleteProduct(itemCode) {
-    if (!confirm(`${t("products.delete")} ${itemCode}?`)) return;
-    cart.delete(itemCode);
-    persistProducts(
-      products.filter((p) => p.itemCode !== itemCode),
-      { toast: t("toast.deleted", { code: itemCode }) }
-    );
   }
 
   function getCabinetAdminFilteredProducts() {
@@ -3239,10 +3441,18 @@
       return;
     }
     if (cabinetProducts.length && !confirm(`${t("products.cabinetCopyFromMain")}?`)) return;
-    cabinetProducts = products.map((p) => finalizeCabinetProduct({ ...p }));
-    persistCabinetProducts(cabinetProducts, {
-      toast: t("toast.exported", { n: cabinetProducts.length }),
+    const copied = products.map((p) =>
+      finalizeCabinetProduct(sanitizeCabinetProduct({ ...p, cabinetReserved: false }))
+    );
+    const finalized = finalizeCabinetCatalogUpload(copied, orders);
+    if (finalized.ordersChanged) {
+      orders = finalized.orders;
+      saveOrders(orders);
+    }
+    persistCabinetProducts(finalized.products, {
+      toast: t("toast.cabinetCopiedFromMain", { n: finalized.products.length }),
     });
+    flushStorageToServer();
   }
 
   function openProductForm(mode = "main") {
@@ -3305,7 +3515,21 @@
       return;
     }
     products.push(product);
-    persistProducts(products, { toast: t("toast.productAdded", { code: itemCode }) });
+    persistProducts(products, {
+      toast: t("toast.productAdded", { code: itemCode }),
+      syncSpotCatalog: true,
+    });
+  }
+
+  function sumOrderLines(filterFn = () => true) {
+    return orders
+      .filter(filterFn)
+      .flatMap((order) =>
+        (order.lines || []).map((line) => ({
+          ...line,
+          order,
+        }))
+      );
   }
 
   function renderReports() {
@@ -3378,6 +3602,7 @@
     const searchBtn = document.getElementById(isCabinet ? "cab-btn-search" : "btn-search");
     searchBtn?.addEventListener("click", () => {
       hideSearchSuggestions(ctx);
+      if (tryAddToCartFromSearchShortcut(ctx)) return;
       if (!tryAddSearchRecordFromInput(ctx)) {
         ctx.page = 1;
         renderOrderingView(ctx);
@@ -3391,7 +3616,10 @@
       } else {
         toggleSpotSearchClearBtn();
         clearTimeout(searchSuggestTimer);
-        searchSuggestTimer = setTimeout(() => renderSearchSuggestions(ctx), 120);
+        searchSuggestTimer = setTimeout(() => {
+          renderSearchSuggestions(ctx);
+          tryJumpToSearchInput(ctx);
+        }, 120);
       }
     });
     v.searchCode?.addEventListener("focus", () => renderSearchSuggestions(ctx));
@@ -3419,6 +3647,7 @@
       }
       if (e.key === "Enter") {
         hideSearchSuggestions(ctx);
+        if (tryAddToCartFromSearchShortcut(ctx)) return;
         if (!tryAddSearchRecordFromInput(ctx)) {
           ctx.page = 1;
           renderOrderingView(ctx);
@@ -3430,9 +3659,12 @@
     if (!isCabinet) {
       document.getElementById("btn-clear-search-code")?.addEventListener("click", () => {
         v.searchCode.value = "";
+        spotSearchJumpCode = null;
         toggleSpotSearchClearBtn();
         hideSearchSuggestions(ctx);
         renderSearchPreview(ctx);
+        ctx.page = 1;
+        renderOrderingView(ctx);
         v.searchCode.focus();
       });
     }
@@ -3459,6 +3691,7 @@
     const resetBtn = document.getElementById(isCabinet ? "cab-btn-reset-filters" : "btn-reset-filters");
     resetBtn?.addEventListener("click", () => {
       v.searchCode.value = "";
+      if (!isCabinet) spotSearchJumpCode = null;
       if (!isCabinet) toggleSpotSearchClearBtn();
       ctx.searchRecords = [];
       ctx.searchHistorySelected = new Set();
@@ -3549,12 +3782,37 @@
     });
 
     v.productPagination?.addEventListener("click", (e) => {
+      const jumpGo = e.target.closest("[data-page-jump-go], [data-cabinet-page-jump-go]");
+      if (jumpGo) {
+        const input = v.productPagination.querySelector(
+          isCabinet ? "[data-cabinet-page-jump]" : "[data-page-jump]"
+        );
+        const totalPages = Math.max(1, Math.ceil(getFilteredProducts(ctx).length / LIST_PAGE_SIZE));
+        const next = Math.min(Math.max(1, parseInt(input?.value, 10) || 1), totalPages);
+        ctx.page = next;
+        renderOrderingView(ctx);
+        return;
+      }
       const btn = e.target.closest(".page-btn");
       if (!btn || btn.disabled) return;
       const p = btn.dataset[pageKey];
       if (p === "prev") ctx.page -= 1;
       else if (p === "next") ctx.page += 1;
       else ctx.page = parseInt(p, 10);
+      renderOrderingView(ctx);
+    });
+
+    v.productPagination?.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      const input = e.target.matches?.(
+        isCabinet ? "[data-cabinet-page-jump]" : "[data-page-jump]"
+      )
+        ? e.target
+        : null;
+      if (!input) return;
+      e.preventDefault();
+      const totalPages = Math.max(1, Math.ceil(getFilteredProducts(ctx).length / LIST_PAGE_SIZE));
+      ctx.page = Math.min(Math.max(1, parseInt(input.value, 10) || 1), totalPages);
       renderOrderingView(ctx);
     });
 
@@ -3910,8 +4168,7 @@
   document.getElementById("btn-close-detail").addEventListener("click", () => els.detailDialog.close());
   document.getElementById("btn-detail-close").addEventListener("click", () => els.detailDialog.close());
 
-  /* Stock admin */
-  document.getElementById("btn-save-all-stock")?.addEventListener("click", saveAllStockChanges);
+  /* Product preview admin */
   document.getElementById("btn-add-product")?.addEventListener("click", () => openProductForm("main"));
   els.adminSearch?.addEventListener("input", () => {
     adminPage = 1;
@@ -3926,24 +4183,6 @@
     else if (p === "next") adminPage += 1;
     else adminPage = parseInt(p, 10);
     renderAdminProductList();
-  });
-
-  els.stockEditBody?.addEventListener("click", (e) => {
-    const saveCode = e.target.dataset.saveStock;
-    const deleteCode = e.target.dataset.deleteProduct;
-    if (saveCode) saveSingleStock(saveCode);
-    if (deleteCode) deleteProduct(deleteCode);
-  });
-
-  els.stockEditBody?.addEventListener("change", (e) => {
-    if (!e.target.classList.contains("stock-input")) return;
-    const row = e.target.closest("tr[data-code]");
-    if (!row || e.target.dataset.field !== "stockQty") return;
-    const stockQty = Math.max(0, parseInt(e.target.value, 10) || 0);
-    const orderableInput = row.querySelector('[data-field="orderableQty"]');
-    if (orderableInput && parseInt(orderableInput.value, 10) > stockQty) {
-      orderableInput.value = stockQty;
-    }
   });
 
   /* Cabinet product admin */
@@ -3999,14 +4238,11 @@
     }
   });
   document.getElementById("btn-download-cabinet-template")?.addEventListener("click", () => {
-    const source = cabinetProducts.length
-      ? cabinetProducts
-      : DEFAULT_PRODUCTS.map((p) => normalizeProduct({ ...p }));
-    downloadCabinetExcel("新货柜预定商品模板.xlsx", source);
+    downloadCabinetExcel("新货柜预定模板.xlsx", [], { templateOnly: true });
     showToast(t("toast.tplDownloaded"));
   });
   document.getElementById("btn-export-cabinet-products")?.addEventListener("click", () => {
-    downloadCabinetExcel(`cabinet_products_${todayISO()}.xlsx`, cabinetProducts);
+    downloadCabinetExcel(`新货柜预定_${todayISO()}.xlsx`, cabinetProducts);
     showToast(t("toast.exported", { n: cabinetProducts.length }));
   });
   document.getElementById("btn-copy-from-main-products")?.addEventListener("click", copyMainProductsToCabinet);
@@ -4015,14 +4251,20 @@
     if (!file) return;
     if (els.cabinetImportResult) els.cabinetImportResult.hidden = true;
     try {
-      const imported = await parseCabinetExcelFile(file);
-      const result = mergeCabinetProducts(cabinetProducts, imported);
-      persistCabinetProducts(result.products, {
+      const patches = await parseInventoryExcelFile(file);
+      const result = mergeCabinetInventoryUpdate(cabinetProducts, patches, { fullReplace: true });
+      const finalized = finalizeCabinetCatalogUpload(result.products, orders);
+      if (finalized.ordersChanged) {
+        orders = finalized.orders;
+        saveOrders(orders);
+      }
+      persistCabinetProducts(finalized.products, {
         toast: t("toast.cabinetExcelSynced", {
           n: result.total,
           removed: result.removed,
         }),
       });
+      flushStorageToServer();
       if (els.cabinetImportResult) {
         els.cabinetImportResult.hidden = false;
         els.cabinetImportResult.className = "import-result success";
@@ -4053,31 +4295,57 @@
     saveNewProduct(new FormData(els.productForm));
   });
 
-  function handleInventoryExcelUpload(file) {
+  async function handleInventoryExcelUpload(file) {
     els.inventoryImportResult.hidden = true;
-    return parseInventoryExcelFile(file).then((patches) => {
-      const result = mergeInventoryUpdate(products, patches);
-      const finalized = finalizeInventoryCatalogUpload(result.products, orders);
-      if (finalized.ordersChanged) {
-        orders = finalized.orders;
-        saveOrders(orders);
-      }
-      persistProducts(finalized.products, {
-        fromInventoryUpload: true,
-        toast: t("toast.inventorySynced", { n: result.total }),
-      });
-      els.inventoryImportResult.hidden = false;
-      els.inventoryImportResult.className = "import-result success";
-      els.inventoryImportResult.innerHTML =
-        `✓ 库存同步成功：共 ${result.total} 行，` +
-        `覆盖 ${result.updated} 件，新增 ${result.added} 件，移除 ${result.removed} 件。` +
-        `<br/>现货目录、商品分类与部门分类已按 Excel 全部更新；华语商品名称已统一，历史乱码已清除。` +
-        `<br/>新货柜预定商品库未变动。`;
-      return result;
+    const patches = await parseInventoryExcelFile(file);
+    const result = mergeInventoryUpdate(products, patches, { fullReplace: true });
+    const finalized = finalizeInventoryCatalogUpload(result.products, orders);
+    if (finalized.ordersChanged) {
+      orders = finalized.orders;
+      saveOrders(orders);
+    }
+    persistProducts(finalized.products, {
+      fromInventoryUpload: true,
+      toast: false,
     });
+
+    let flush = await flushStorageToServer();
+    if (!flush.ok) {
+      flush = await flushStorageToServer();
+    }
+
+    let excelNote = "";
+    try {
+      const backend = await saveInventoryExcelToBackend(file);
+      if (backend?.latest) {
+        excelNote = `<br/><span class="inventory-save-path">${escapeHtml(
+          t("products.inventoryExcelArchived", { path: backend.latest })
+        )}</span>`;
+      }
+      if (!flush.ok) {
+        await flushStorageToServer();
+      }
+    } catch (_) {
+      /* Excel 归档失败不影响商品目录持久化 */
+    }
+
+    updateInventorySyncStatus();
+
+    const removedNote = result.removed > 0 ? t("products.inventoryRemovedNote", { n: result.removed }) : "";
+    els.inventoryImportResult.hidden = false;
+    els.inventoryImportResult.className = "import-result success";
+    els.inventoryImportResult.innerHTML =
+      t("products.inventoryUploadDone", {
+        total: result.total,
+        updated: result.updated,
+        added: result.added,
+        removed: removedNote,
+      }) + excelNote;
+    showToast(t("toast.inventorySynced", { n: result.total }));
+    return result;
   }
 
-  /* Inventory Excel */
+  /* Inventory Excel (synced with Spot Catalog ordering page) */
   document.getElementById("btn-download-inventory-template").addEventListener("click", () => {
     downloadInventoryExcel("现货目录模板.xlsx", [], { templateOnly: true });
     showToast(t("toast.inventoryTplDownloaded"));
@@ -4203,7 +4471,6 @@
     "ordering",
     "cabinet-reserve",
     "orders",
-    "suggestions",
   ]);
 
   const MOBILE_VIEW_TITLE_KEYS = {
@@ -4303,7 +4570,30 @@
     orders,
     productsVersion,
     cabinetProductsVersion,
+    catalogPurged,
+    cabinetPurged,
   } = repairPersistedStorageOnBoot());
+  if (!products.length) {
+    const recovered = hydrateProductsFromServerSnapshot();
+    if (recovered?.length) {
+      products = recovered;
+      productsVersion = getProductsVersion();
+      invalidateSpotFilterCache();
+      showToast(t("toast.catalogRecovered", { n: products.length }));
+    }
+  }
+  if (catalogPurged) {
+    standardOrderingCtx.searchRecords = [];
+    standardOrderingCtx.searchHistorySelected = new Set();
+    cart.clear();
+    showToast(t("toast.catalogCleared"));
+  }
+  if (cabinetPurged) {
+    cabinetOrderingCtx.searchRecords = [];
+    cabinetOrderingCtx.searchHistorySelected = new Set();
+    cabinetCart.clear();
+    showToast(t("toast.cabinetCatalogCleared"));
+  }
   branches = loadBranches();
   renderSearchPreview();
   renderSearchPreview(cabinetOrderingCtx);

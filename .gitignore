@@ -6,3 +6,4 @@ Thumbs.db
 
 # Local dev data (PowerShell server); too large / machine-specific for GitHub
 storage/local-data.json
+storage/uploads/
